@@ -48,7 +48,10 @@ export async function fetchLatestGithub(repo) {
     if (metaAsset) {
       try {
         const j = await fetchJson(metaAsset.url);
-        if (j && j.file === asset.name && j.sha256) sha256 = String(j.sha256);
+        // GitHub normalise le nom d'asset (espaces -> points) : on compare en ignorant
+        // espaces et points pour que le repli fonctionne malgré cette différence.
+        const norm = (s) => String(s || '').replace(/[ .]/g, '').toLowerCase();
+        if (j && j.sha256 && (j.file === asset.name || norm(j.file) === norm(asset.name))) sha256 = String(j.sha256);
       } catch { /* indisponible : downloadTo refusera l'installation sans sha256 */ }
     }
   }
