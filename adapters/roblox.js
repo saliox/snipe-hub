@@ -1,7 +1,7 @@
 // Adaptateur Roblox : normalise le moteur roblox (platforms/roblox) vers l'interface unifiée du hub.
 import * as auth from '../platforms/roblox/auth.js';
 import { validateName, validName } from '../platforms/roblox/roblox.js';
-import { snipe as runSnipe } from '../platforms/roblox/sniper.js';
+import { snipe as runSnipe, requestStop } from '../platforms/roblox/sniper.js';
 
 export default {
   id: 'roblox',
@@ -33,6 +33,8 @@ export default {
   },
 
   // opts unifiés : { name, password, dropAt, monitor, burst, leadMs, skipNtp }
+  stop() { try { requestStop(); } catch { /* */ } },
+
   async snipe(o) {
     const cookie = auth.loadCookie();
     if (!cookie) throw new Error('Connecte-toi d\'abord (cookie .ROBLOSECURITY).');

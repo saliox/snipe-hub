@@ -162,6 +162,10 @@ input[type=checkbox],input[type=radio]{accent-color:var(--crimson);cursor:pointe
 @keyframes shine{0%,60%{left:-60%}100%{left:130%}}
 .btn:disabled{opacity:.55;cursor:wait;filter:grayscale(.3)}
 .btn:disabled::after{display:none}
+/* Bouton snipe en mode « Arrêter » (surveillance en cours) */
+.btn.primary.stopping{background:linear-gradient(100deg,#5a2532,#8a2a2f);box-shadow:0 0 0 1px rgba(237,66,69,.5),0 0 18px -6px rgba(237,66,69,.7);animation:stopPulse 1.3s ease-in-out infinite}
+.btn.primary.stopping::after{display:none}
+@keyframes stopPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.16)}}
 
 .result{margin-top:8px;font-size:14px;font-weight:700}
 .result.good{color:var(--good);animation:pop .3s var(--ease)}

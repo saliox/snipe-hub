@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('hub', {
   setToken: (pid, token, isUser) => ipcRenderer.invoke('pf:setToken', pid, token, isUser),
   check: (pid, name) => ipcRenderer.invoke('pf:check', pid, name),
   snipe: (pid, opts) => ipcRenderer.invoke('pf:snipe', pid, opts),
+  stop: () => ipcRenderer.invoke('pf:stop'),
 
   accounts: (pid) => ipcRenderer.invoke('pf:accounts', pid),
   accountSetActive: (pid, id) => ipcRenderer.invoke('pf:accountSetActive', pid, id),

@@ -115,9 +115,14 @@ ipcMain.handle('pf:login', (_e, pid, arg) => withAdapter(pid, async (a) => {
 
 // Snipe : lance le moteur de la plateforme et STREAME sa sortie console vers le panneau de logs.
 let running = false;
+let stopCurrent = null;   // fonction d'arrêt coopératif du snipe en cours (moteur.requestStop)
+// Arrête le snipe en cours (bouton Stop) : le moteur voit son stopFlag et sort → le
+// `await a.snipe` se résout → le finally ci-dessous relâche le verrou `running`.
+ipcMain.handle('pf:stop', () => { try { stopCurrent && stopCurrent(); } catch {} return { ok: true }; });
 ipcMain.handle('pf:snipe', (_e, pid, opts) => withAdapter(pid, async (a) => {
   if (running) return { ok: false, error: 'Un snipe est déjà en cours.' };
   running = true;
+  stopCurrent = () => a.stop?.();
   const send = (line) => { try { win?.webContents.send('log', { pid, line: stripAnsi(line) }); } catch {} };
   const orig = { log: console.log, err: console.error, warn: console.warn };
   console.log = (...x) => { send(x.join(' ')); orig.log(...x); };
@@ -128,7 +133,7 @@ ipcMain.handle('pf:snipe', (_e, pid, opts) => withAdapter(pid, async (a) => {
     const r = await a.snipe(opts);
     send('✅ Terminé.'); return { ok: true, result: r };
   } catch (e) { send('❌ ' + (e?.message || e)); return { ok: false, error: e?.message || String(e) }; }
-  finally { console.log = orig.log; console.error = orig.err; console.warn = orig.warn; running = false; }
+  finally { console.log = orig.log; console.error = orig.err; console.warn = orig.warn; running = false; stopCurrent = null; }
 }));
 
 // ---------- IPC : check en masse (avec proxies optionnels) ----------

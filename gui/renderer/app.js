@@ -185,14 +185,21 @@ function snipeOpts() {
   };
 }
 
+let sniping = false;
 $('snipeBtn').onclick = async () => {
+  const btn = $('snipeBtn');
+  // Pendant un snipe, le bouton devient « Arrêter » : un clic stoppe le moteur.
+  if (sniping) { logLine('⏹ Arrêt demandé…', current); await H.stop(); return; }
   if (!current) return alert('Choisis une plateforme.');
+  if (soonMode) return;
   const o = snipeOpts();
   if (!o.name) return alert('Entre un nom / code à sniper.');
-  $('snipeBtn').disabled = true; $('snipeBtn').textContent = '⏳ En cours…';
+  sniping = true;
+  btn.classList.add('stopping'); btn.textContent = '⏹ Arrêter';
   const r = await H.snipe(current, o);
+  sniping = false;
+  btn.classList.remove('stopping'); btn.textContent = '🎯 Lancer le snipe';
   if (r && r.ok === false) logLine('❌ ' + r.error, current);
-  $('snipeBtn').disabled = false; $('snipeBtn').textContent = '🎯 Lancer le snipe';
 };
 
 // ---------- Watchlist ----------

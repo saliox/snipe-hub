@@ -1,7 +1,7 @@
 // Adaptateur X (Twitter) : normalise le moteur x (platforms/x) vers l'interface du hub.
 import * as auth from '../platforms/x/auth.js';
 import { validName, checkAvailable } from '../platforms/x/x.js';
-import { snipe as runSnipe } from '../platforms/x/sniper.js';
+import { snipe as runSnipe, requestStop } from '../platforms/x/sniper.js';
 
 export default {
   id: 'x',
@@ -30,6 +30,8 @@ export default {
   },
 
   // opts unifiés : { name, dropAt, monitor, leadMs, skipNtp }
+  stop() { try { requestStop(); } catch { /* */ } },
+
   async snipe(o) {
     const cred = auth.loadCreds();
     if (!cred) throw new Error('Connecte-toi d\'abord (identifiants de session X : auth_token + ct0).');

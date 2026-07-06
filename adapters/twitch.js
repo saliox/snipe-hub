@@ -1,7 +1,7 @@
 // Adaptateur Twitch : normalise le moteur twitch (platforms/twitch) vers l'interface du hub.
 import * as auth from '../platforms/twitch/auth.js';
 import { validName, checkAvailable } from '../platforms/twitch/twitch.js';
-import { snipe as runSnipe } from '../platforms/twitch/sniper.js';
+import { snipe as runSnipe, requestStop } from '../platforms/twitch/sniper.js';
 
 export default {
   id: 'twitch',
@@ -30,6 +30,8 @@ export default {
   },
 
   // opts unifiés : { name, dropAt, monitor, leadMs, skipNtp }
+  stop() { try { requestStop(); } catch { /* */ } },
+
   async snipe(o) {
     const token = auth.loadToken();
     if (!token) throw new Error('Connecte-toi d\'abord (jeton OAuth Twitch).');

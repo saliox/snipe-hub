@@ -1,7 +1,7 @@
 // Adaptateur Fortnite / Epic : normalise le moteur snipe-ftn (platforms/ftn) vers l'interface unifiée.
 import * as accounts from '../platforms/ftn/accounts.js';
 import * as epic from '../platforms/ftn/epicapi.js';
-import { snipe } from '../platforms/ftn/sniper.js';
+import { snipe, requestStop } from '../platforms/ftn/sniper.js';
 
 export default {
   id: 'ftn',
@@ -58,6 +58,8 @@ export default {
   },
 
   // opts unifiés : { name, dropAt, monitor, connections, burst, spacingMs, leadMs, skipNtp }
+  stop() { try { requestStop(); } catch { /* */ } },
+
   async snipe(o) {
     const token = await accounts.getValidToken();
     const acc = await (accounts.cachedAccount?.() ?? null);

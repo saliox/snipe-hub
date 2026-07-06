@@ -7,7 +7,7 @@ import * as dc from '../platforms/discord/discord.js';
 import * as store from '../platforms/discord/tokenstore.js';
 import { saveEncrypted, loadEncrypted } from '../platforms/discord/securebox.js';
 import { dataDir } from '../platforms/discord/paths.js';
-import { snipe } from '../platforms/discord/sniper.js';
+import { snipe, requestStop } from '../platforms/discord/sniper.js';
 
 const botsFile = () => path.join(dataDir(), 'bots.enc');
 
@@ -91,6 +91,8 @@ export default {
   },
 
   // opts unifiés : { name (=code(s) séparés par des virgules), guildId, autoLead, dropAt, monitor, connections, burst, spacingMs, leadMs, skipNtp }
+  stop() { try { requestStop(); } catch { /* */ } },
+
   async snipe(o) {
     if (!o.guildId) throw new Error('Renseigne l\'ID de ton serveur (guildId).');
     const bots = loadBots();

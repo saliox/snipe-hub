@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as auth from '../platforms/mc/auth.js';
 import * as mojang from '../platforms/mc/mojang.js';
-import { snipe } from '../platforms/mc/sniper.js';
+import { snipe, requestStop } from '../platforms/mc/sniper.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Chemin du cache MC, calqué sur platforms/mc/auth.js (dataDir = SNIPE_DATA_DIR || platforms/data).
@@ -40,6 +40,8 @@ export default {
   },
 
   // opts unifiés : { name, dropAt, monitor, connections, burst, spacingMs, leadMs, skipNtp }
+  stop() { try { requestStop(); } catch { /* */ } },
+
   async snipe(o) {
     const token = await auth.getValidToken();
     return snipe({
