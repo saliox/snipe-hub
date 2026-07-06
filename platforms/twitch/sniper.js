@@ -15,7 +15,7 @@ async function grabWhenFree(name, session, { pollMs }) {
   let takenLosses = 0, polls = 0;
   while (!stopFlag) {
     let r;
-    try { r = await checkAvailable(name, null); }
+    try { r = await checkAvailable(name, session.token); }
     catch (e) { log.warn(`sonde: ${e.message}`); await sleep(pollMs); continue; }
     polls++;
     if (r.rateLimited) { const w = (r.retryAfter || 2) * 1000; log.warn(`429 sur la sonde — pause ${Math.round(w / 1000)}s.`); await sleep(w); continue; }

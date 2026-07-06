@@ -20,13 +20,14 @@ export default {
   async logout() { try { return auth.logout(); } catch { return null; } },
 
   async check(name) {
-    const r = await checkAvailable(name);
-    if (r.free == null) throw new Error(r.rateLimited ? 'Rate-limité par Twitch — réessaie.' : `statut ${r.status}`);
+    const r = await checkAvailable(name, auth.loadToken());
+    if (r.free == null) throw new Error(r.rateLimited ? 'Rate-limité par Twitch — réessaie.' : (r.message || `statut ${r.status}`));
     return { free: !!r.free };
   },
-  // Disponibilité anonyme (endpoint passport) → parfait pour le check en masse proxifié.
+  // Dispo via Helix Get Users (nécessite le token) → check en masse proxifié.
   async bulkChecker() {
-    return async (name, dispatcher) => { const r = await checkAvailable(name, dispatcher); return { free: r.free }; };
+    const token = auth.loadToken();
+    return async (name, dispatcher) => { const r = await checkAvailable(name, token, dispatcher); return { free: r.free }; };
   },
 
   // opts unifiés : { name, dropAt, monitor, leadMs, skipNtp }
