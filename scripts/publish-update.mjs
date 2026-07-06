@@ -20,9 +20,10 @@ const releaseDir = path.join(root, 'release');
 // 1. S'assurer que l'installeur de cette version existe (sinon : electron-builder).
 if (!fs.existsSync(installerPath)) {
   console.log(`Installeur ${version} absent, construction (electron-builder)...`);
-  // npm.cmd sur Windows (sans shell:true → évite DEP0190 et toute concaténation d'args).
-  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const r = spawnSync(npmCmd, ['run', 'dist'], { cwd: root, stdio: 'inherit' });
+  // shell:true est nécessaire pour résoudre npm(.cmd) sur Windows. Les arguments sont
+  // STATIQUES ('run','dist') → aucune surface d'injection (l'avertissement DEP0190,
+  // qui concerne des args non échappés, ne s'applique pas ici).
+  const r = spawnSync('npm', ['run', 'dist'], { cwd: root, stdio: 'inherit', shell: true });
   if (r.status !== 0 || !fs.existsSync(installerPath)) {
     console.error(`Échec de la construction de l'installeur (attendu : dist/${installerName}).`);
     process.exit(1);
