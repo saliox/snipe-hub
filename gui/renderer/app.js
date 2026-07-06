@@ -52,11 +52,26 @@ async function loadPlatforms() {
   for (const p of list) {
     const b = document.createElement('button');
     b.className = 'pf-item' + (p.soon ? ' soon' : '');
-    b.innerHTML = `<span class="e">${p.emoji}</span> <span>${p.label}</span>${p.soon ? '<span class="badge">bientôt</span>' : ''}`;
+    b.innerHTML = `<span class="e">${p.emoji}</span> <span>${p.label}</span>${p.soon ? '<span class="badge">bientôt</span>' : '<span class="cdot" title="non connecté"></span>'}`;
     b.onclick = () => selectPlatform(p.id);   // les « bientôt » sont cliquables : elles montrent un aperçu
     if (p.soon) b.title = 'Bientôt disponible';
     b.dataset.pid = p.id;
     box.appendChild(b);
+  }
+}
+
+// Pastilles de connexion dans la sidebar : vert = compte connecté. whoami est local
+// (sans réseau) quand aucun identifiant n'est enregistré → refresh peu coûteux.
+async function refreshDots() {
+  for (const b of document.querySelectorAll('.pf-item')) {
+    const dot = b.querySelector('.cdot');
+    if (!dot) continue;
+    try {
+      const r = await H.whoami(b.dataset.pid);
+      const acct = r && r.ok && r.account;
+      dot.classList.toggle('on', !!acct);
+      dot.title = acct ? ('connecté : ' + (acct.name || '')) : 'non connecté';
+    } catch { dot.classList.remove('on'); }
   }
 }
 
@@ -155,9 +170,9 @@ $('loginBtn').onclick = async () => {
     if (r && r.ok) { logLine('✅ Connecté.', current); $('loginArg').value = ''; }
     else logLine('❌ ' + (r && r.error ? r.error : 'Échec de connexion.'), current);
   } catch (e) { logLine('❌ ' + (e && e.message ? e.message : e), current); }
-  finally { btn.disabled = false; btn.textContent = label; refreshAccount(); renderAccounts(current); }
+  finally { btn.disabled = false; btn.textContent = label; refreshAccount(); renderAccounts(current); refreshDots(); }
 };
-$('logoutBtn').onclick = async () => { if (current) { await H.logout(current); refreshAccount(); renderAccounts(current); } };
+$('logoutBtn').onclick = async () => { if (current) { await H.logout(current); refreshAccount(); renderAccounts(current); refreshDots(); } };
 
 // ---------- Disponibilité ----------
 $('checkBtn').onclick = async () => {
@@ -291,5 +306,73 @@ $('bulkBtn').onclick = async () => {
   finally { btn.disabled = false; btn.textContent = 'Vérifier tout'; }
 };
 
+// ---------- Réglages ----------
+$('settingsBtn').onclick = async () => {
+  const r = await H.settingsGet(); const s = (r && r.settings) || {};
+  $('setMs').value = s.msClientId || ''; $('setEpicId').value = s.epicClientId || '';
+  $('setEpicSecret').value = s.epicClientSecret || ''; $('setProxies').value = s.proxies || '';
+  $('settingsMsg').textContent = '';
+  $('settingsModal').classList.remove('hidden');
+};
+$('settingsClose').onclick = () => $('settingsModal').classList.add('hidden');
+$('settingsModal').onclick = (e) => { if (e.target === $('settingsModal')) $('settingsModal').classList.add('hidden'); };
+$('settingsSave').onclick = async () => {
+  const s = { msClientId: $('setMs').value.trim(), epicClientId: $('setEpicId').value.trim(), epicClientSecret: $('setEpicSecret').value.trim(), proxies: $('setProxies').value };
+  await H.settingsSave(s);
+  $('settingsMsg').textContent = '✅ Enregistré.';
+  if (s.proxies) $('bulkProxies').value = s.proxies;
+  setTimeout(() => $('settingsModal').classList.add('hidden'), 700);
+};
+
+// ---------- Historique ----------
+$('historyBtn').onclick = async () => {
+  const r = await H.historyGet(); const items = (r && r.items) || [];
+  const box = $('historyBody'); box.innerHTML = '';
+  if (!items.length) { box.innerHTML = '<div class="muted small">Aucun snipe pour l\'instant.</div>'; }
+  else for (const it of items) {
+    const row = document.createElement('div'); row.className = 'hist-row ' + (it.success ? 'ok' : 'ko');
+    const ico = document.createElement('span'); ico.textContent = it.success ? '✅' : '❌';
+    const nm = document.createElement('span'); nm.className = 'hist-name'; nm.textContent = it.name;
+    const pf = document.createElement('span'); pf.className = 'hist-pf'; pf.textContent = it.platform;
+    const tm = document.createElement('span'); tm.className = 'hist-time'; tm.textContent = new Date(it.at).toLocaleString('fr-FR');
+    row.append(ico, nm, pf, tm); box.appendChild(row);
+  }
+  $('historyModal').classList.remove('hidden');
+};
+$('historyClose').onclick = () => $('historyModal').classList.add('hidden');
+$('historyModal').onclick = (e) => { if (e.target === $('historyModal')) $('historyModal').classList.add('hidden'); };
+
+// ---------- Entrée pour lancer ----------
+$('checkName').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('checkBtn').click(); });
+$('snipeName').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('snipeBtn').click(); });
+$('loginArg').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
+
+// ---------- Quoi de neuf (au 1er lancement d'une nouvelle version) ----------
+const CHANGELOG = {
+  '0.4.0': 'Panneau Réglages (creds MC/Epic + proxies dans l\'UI), pastilles de connexion, historique des snipes, Entrée pour lancer.',
+  '0.3.0': 'Notifications bureau + surveillance de la watchlist en arrière-plan (radar multi-plateforme).',
+  '0.2.3': 'Vérification de disponibilité Twitch réparée (API Helix).',
+  '0.2.1': 'Bouton Stop pour arrêter un snipe en surveillance.',
+  '0.2.0': 'Ajout de X (Twitter) — 6 plateformes.',
+};
+(async () => {
+  try {
+    const v = await H.version();
+    if (v && localStorage.getItem('lastSeenVersion') !== v) {
+      const el = $('whatsnew'); el.innerHTML = '';
+      const x = document.createElement('button'); x.className = 'toast-x'; x.textContent = '×'; x.onclick = () => el.classList.add('hidden');
+      const t = document.createElement('div'); t.className = 'toast-title'; t.textContent = `✨ Quoi de neuf — v${v}`;
+      const b = document.createElement('div'); b.textContent = CHANGELOG[v] || 'Nouvelle version installée.';
+      el.append(x, t, b); el.classList.remove('hidden');
+      localStorage.setItem('lastSeenVersion', v);
+      setTimeout(() => el.classList.add('hidden'), 9000);
+    }
+  } catch {}
+})();
+
 // ---------- Init ----------
-(async () => { await loadPlatforms(); const w = await H.watchGet(); renderWatch(w.items); })();
+(async () => {
+  await loadPlatforms(); refreshDots();
+  const w = await H.watchGet(); renderWatch(w.items);
+  try { const r = await H.settingsGet(); const p = r && r.settings && r.settings.proxies; if (p) $('bulkProxies').value = p; } catch {}
+})();

@@ -53,10 +53,34 @@ function notify(title, body) {
   } catch {}
 }
 
+// ---------- Réglages (creds + proxies) persistés (userData/settings.json) ----------
+const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'settings.json');
+const readSettings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8')); } catch { return {}; } };
+const writeSettings = (s) => { try { fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true }); fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(s, null, 2)); } catch {} };
+// Applique les creds saisis dans l'UI aux variables d'env que lisent les moteurs
+// (MC device code / Epic). Ne touche qu'aux champs renseignés → un vrai .env reste prioritaire si l'UI est vide.
+function applySettings(s) {
+  if (s && s.msClientId) process.env.MS_CLIENT_ID = s.msClientId;
+  if (s && s.epicClientId) process.env.EPIC_CLIENT_ID = s.epicClientId;
+  if (s && s.epicClientSecret) process.env.EPIC_CLIENT_SECRET = s.epicClientSecret;
+}
+
+// ---------- Historique des snipes (userData/history.json, 100 derniers) ----------
+const HISTORY_FILE = () => path.join(app.getPath('userData'), 'history.json');
+const readHistory = () => { try { return JSON.parse(fs.readFileSync(HISTORY_FILE(), 'utf8')); } catch { return []; } };
+function pushHistory(entry) {
+  try {
+    const h = readHistory(); h.unshift(entry);
+    fs.mkdirSync(path.dirname(HISTORY_FILE()), { recursive: true });
+    fs.writeFileSync(HISTORY_FILE(), JSON.stringify(h.slice(0, 100), null, 2));
+  } catch {}
+}
+
 const stripAnsi = (s) => String(s).replace(/\[[0-9;]*m/g, '');
 
 app.whenReady().then(() => {
   initDataDirs();
+  applySettings(readSettings());
   createWindow();
   try { initUpdater(() => win); setTimeout(() => checkForUpdates({ silent: true }).catch(() => {}), 4000); } catch {}
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -66,6 +90,12 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 // ---------- IPC : méta ----------
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('platforms:list', () => listPlatforms());
+ipcMain.handle('settings:get', () => ({ ok: true, settings: readSettings() }));
+ipcMain.handle('settings:save', (_e, s) => {
+  const clean = { msClientId: s?.msClientId || '', epicClientId: s?.epicClientId || '', epicClientSecret: s?.epicClientSecret || '', proxies: s?.proxies || '' };
+  writeSettings(clean); applySettings(clean); return { ok: true };
+});
+ipcMain.handle('history:get', () => ({ ok: true, items: readHistory() }));
 // Normalise la réponse pour le renderer : { ok, updateAvailable, current, version } | { ok:false, error }.
 ipcMain.handle('update:check', async () => {
   try {
@@ -163,6 +193,7 @@ ipcMain.handle('pf:snipe', (_e, pid, opts) => withAdapter(pid, async (a) => {
     send(`▶️ Snipe « ${opts.name} » — ${opts.monitor ? 'surveillance' : 'planifié'}…`);
     const r = await a.snipe(opts);
     if (r && r.success) notify('🎯 Snipe réussi !', `« ${opts.name} » obtenu sur ${pid}.`);
+    if (!(r && r.stopped)) pushHistory({ platform: pid, name: opts.name, success: !!(r && r.success), at: Date.now() });
     send('✅ Terminé.'); return { ok: true, result: r };
   } catch (e) { send('❌ ' + (e?.message || e)); return { ok: false, error: e?.message || String(e) }; }
   finally { endCapture(cap); running = false; stopCurrent = null; }
