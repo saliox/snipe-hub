@@ -202,10 +202,12 @@ async function renderWatch(items) {
   box.innerHTML = '';
   for (const it of items) {
     const row = document.createElement('div'); row.className = 'watch-row';
-    row.innerHTML = `<span class="wname">${it.name}</span><span class="wpf">${it.platform}</span>`;
+    // textContent (pas innerHTML) : un nom surveillé est saisi par l'utilisateur → pas d'injection HTML.
+    const wn = document.createElement('span'); wn.className = 'wname'; wn.textContent = it.name;
+    const wp = document.createElement('span'); wp.className = 'wpf'; wp.textContent = it.platform;
     const del = document.createElement('button'); del.className = 'x'; del.textContent = '×';
     del.onclick = async () => { const r = await H.watchRemove(it.platform, it.name); renderWatch(r.items); };
-    row.appendChild(del); box.appendChild(row);
+    row.appendChild(wn); row.appendChild(wp); row.appendChild(del); box.appendChild(row);
   }
 }
 $('watchAddBtn').onclick = async () => {
