@@ -92,7 +92,9 @@ async function selectPlatform(pid) {
   const kind = r.loginKind;
   $('loginArg').classList.toggle('hidden', kind === 'device');
   $('loginArg').placeholder = kind === 'token'
-    ? (pid === 'twitch' ? 'colle ton jeton OAuth Twitch…' : 'token(s) de bot — plusieurs séparés par des virgules')
+    ? (pid === 'twitch' ? 'colle ton jeton OAuth Twitch…'
+      : pid === 'x' ? 'cookies x.com : auth_token=…; ct0=…'
+      : 'token(s) de bot — plusieurs séparés par des virgules')
     : kind === 'code' ? 'colle ton authorizationCode…'
     : kind === 'cookie' ? 'colle ton cookie .ROBLOSECURITY…' : '';
   $('loginBtn').textContent = kind === 'device' ? 'Connexion (device code)' : 'Enregistrer';

@@ -6,8 +6,7 @@ export const PLATFORMS = [
   { id: 'ftn',     label: 'Fortnite / Epic',  emoji: '🎮', ready: true,  load: () => import('./ftn.js') },
   { id: 'roblox',  label: 'Roblox',           emoji: '🟥', ready: true,  load: () => import('./roblox.js') },
   { id: 'twitch',  label: 'Twitch',           emoji: '🟪', ready: true,  load: () => import('./twitch.js') },
-  { id: 'x',       label: 'X (Twitter)',      emoji: '𝕏',  ready: false, soon: true,
-    needs: 'Prévu : auth X (Twitter) + prise de @handle. Emplacement réservé — soumis aux limites de l\'API X.' },
+  { id: 'x',       label: 'X (Twitter)',      emoji: '𝕏',  ready: true,  load: () => import('./x.js') },
 ];
 
 const cache = {};
