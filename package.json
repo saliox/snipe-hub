@@ -1,0 +1,54 @@
+{
+  "name": "snipe-hub",
+  "version": "0.1.0",
+  "description": "Snipe Hub — hub de sniping multi-plateforme (Minecraft, Discord vanity, Fortnite/Epic, + Roblox/Twitch/X) : moteur commun (auth, sync NTP, burst), watchlist unifiée & alertes, auto-update GitHub",
+  "type": "module",
+  "main": "gui/main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node scripts/make-icon.mjs",
+    "dist": "electron-builder --win",
+    "pack": "electron-builder --win --dir",
+    "publish:update": "node scripts/publish-update.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "undici": "^6.19.8"
+  },
+  "devDependencies": {
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.saliox.snipehub",
+    "productName": "Snipe Hub",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "gui/**/*",
+      "core/**/*",
+      "adapters/**/*",
+      "platforms/**/*",
+      "build/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Snipe Hub"
+    }
+  }
+}

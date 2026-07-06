@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#161b26"/><stop offset="1" stop-color="#070910"/>
+    </linearGradient>
+    <linearGradient id="ret" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6b6f"/><stop offset="1" stop-color="#8B0000"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="42%" r="60%">
+      <stop offset="0" stop-color="#ED4245" stop-opacity=".45"/><stop offset="1" stop-color="#ED4245" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#halo)"/>
+  <g transform="translate(256,256)" filter="url(#glow)">
+    <circle r="150" fill="none" stroke="url(#ret)" stroke-width="18"/>
+    <circle r="96" fill="none" stroke="url(#ret)" stroke-width="10" stroke-dasharray="46 54" opacity=".65"/>
+    <g stroke="url(#ret)" stroke-width="18" stroke-linecap="round">
+      <line x1="0" y1="-186" x2="0" y2="-120"/><line x1="0" y1="120" x2="0" y2="186"/>
+      <line x1="-186" y1="0" x2="-120" y2="0"/><line x1="120" y1="0" x2="186" y2="0"/>
+    </g>
+    <circle r="28" fill="#ff6b6f"/>
+  </g>
+</svg>

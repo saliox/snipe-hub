@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snipe Hub</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ff6b6f"/><stop offset="1" stop-color="#8B0000"/>
+          </linearGradient>
+        </defs>
+        <circle cx="24" cy="24" r="18.5" fill="none" stroke="url(#lg)" stroke-width="2.4"/>
+        <circle class="logo-scan" cx="24" cy="24" r="12" fill="none" stroke="url(#lg)" stroke-width="1.4" stroke-dasharray="6 7" opacity=".6"/>
+        <g stroke="url(#lg)" stroke-width="2.4" stroke-linecap="round">
+          <line x1="24" y1="1.5" x2="24" y2="9"/><line x1="24" y1="39" x2="24" y2="46.5"/>
+          <line x1="1.5" y1="24" x2="9" y2="24"/><line x1="39" y1="24" x2="46.5" y2="24"/>
+        </g>
+        <circle class="logo-dot" cx="24" cy="24" r="3.6" fill="#ff6b6f"/>
+      </svg>
+      <span class="brand-txt"><b>SNIPE</b><span class="brand-hub">HUB</span></span>
+      <span class="beta">BÊTA</span>
+    </div>
+    <div class="topright">
+      <span id="version" class="ver">v…</span>
+      <button id="updateBtn" class="btn ghost" title="Vérifier les mises à jour">⟳ MàJ</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-title">Plateformes</div>
+      <div id="platforms" class="platforms"></div>
+
+      <div class="side-title">Watchlist unifiée</div>
+      <div id="watchlist" class="watchlist"><div class="muted small">Aucun nom surveillé.</div></div>
+      <button id="watchClear" class="btn ghost tiny">Vider la watchlist</button>
+    </aside>
+
+    <main class="main">
+      <section id="pfHeader" class="card pf-header">
+        <div class="pf-title"><span id="pfEmoji">🎯</span> <span id="pfLabel">Choisis une plateforme</span></div>
+        <div id="pfNeeds" class="muted small"></div>
+        <div class="acct-row">
+          <span id="acct" class="acct muted">—</span>
+          <span class="spacer"></span>
+          <input id="loginArg" class="in hidden" placeholder="token / code…" />
+          <button id="loginBtn" class="btn">Connexion</button>
+          <button id="logoutBtn" class="btn ghost hidden">Déconnexion</button>
+        </div>
+        <div id="accounts" class="accounts hidden"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">🔎 Disponibilité</div>
+        <div class="row">
+          <input id="checkName" class="in grow" placeholder="pseudo / code à vérifier…" />
+          <button id="checkBtn" class="btn">Vérifier</button>
+        </div>
+        <div id="checkResult" class="result muted">—</div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">🎯 Snipe</div>
+        <div class="row">
+          <input id="snipeName" class="in grow" placeholder="pseudo / code à sniper…" />
+          <input id="guildId" class="in hidden" placeholder="ID de ton serveur" style="max-width:220px" />
+          <input id="snipePassword" class="in hidden" type="password" placeholder="mot de passe Roblox (jamais stocké)" style="max-width:240px" />
+        </div>
+        <div class="row wrap opts">
+          <label class="opt"><input type="radio" name="mode" id="modeMonitor" checked /> Surveiller (dès que libre)</label>
+          <label class="opt"><input type="radio" name="mode" id="modeAt" /> Planifié</label>
+          <input id="atValue" class="in hidden" placeholder="2026-07-10T15:00:00Z ou 90s" style="max-width:230px" />
+        </div>
+        <div class="row wrap opts">
+          <label class="mini">Rafale <input id="burst" class="in num" type="number" value="6" min="1" max="30" /></label>
+          <label class="mini">Espacement(ms) <input id="spacing" class="in num" type="number" value="30" /></label>
+          <label class="mini">Avance(ms) <input id="lead" class="in num" type="number" value="40" /></label>
+          <label class="mini">Connexions <input id="connections" class="in num" type="number" value="3" min="1" max="16" /></label>
+          <label class="mini"><input type="checkbox" id="autoLead" title="Discord : cale l'avance de tir sur la latence mesurée" /> Auto-lead</label>
+          <label class="mini"><input type="checkbox" id="skipNtp" /> Sans NTP</label>
+        </div>
+        <div class="row">
+          <button id="snipeBtn" class="btn primary">🎯 Lancer le snipe</button>
+          <button id="watchAddBtn" class="btn ghost">+ Ajouter à la watchlist</button>
+        </div>
+      </section>
+
+      <section class="card hidden" id="bulkCard">
+        <div class="card-title">📋 Check en masse <span id="bulkNote" class="muted small" style="text-transform:none;letter-spacing:0"></span></div>
+        <div class="row">
+          <textarea id="bulkNames" class="in grow" rows="4" placeholder="un nom par ligne…"></textarea>
+          <textarea id="bulkProxies" class="in grow" rows="4" placeholder="proxies (optionnel, 1/ligne) — host:port ou http://user:pass@host:port"></textarea>
+        </div>
+        <div class="row">
+          <button id="bulkBtn" class="btn">Vérifier tout</button>
+          <span id="bulkProgress" class="muted small"></span>
+          <span class="spacer"></span>
+          <label class="mini">Concurrence <input id="bulkConc" class="in num" type="number" value="20" min="1" max="100" /></label>
+        </div>
+        <div id="bulkResults" class="bulk-results"></div>
+      </section>
+
+      <section class="card grow-card">
+        <div class="card-title">📜 Journal <button id="logClear" class="btn ghost tiny">effacer</button></div>
+        <pre id="log" class="log"></pre>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Dépendances & sorties de build
+node_modules/
+dist/
+release/
+
+# Secrets & logs
+.env
+*.log
+
+# Données locales éventuelles (tokens chiffrés) si un moteur est lancé en CLI
+data/
+platforms/**/data/
+
+# OS
+.DS_Store
+Thumbs.db
