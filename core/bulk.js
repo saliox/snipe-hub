@@ -15,6 +15,11 @@ import { makeProxyPool } from '../platforms/mc/proxy.js';
 export async function runBulk({ names, proxies = [], check, concurrency = 20, onProgress }) {
   const clean = (names || []).map((s) => String(s).trim()).filter(Boolean);
   const pool = (proxies && proxies.length) ? makeProxyPool(proxies) : null;
+  // Anti-fuite d'IP : si l'utilisateur a fourni des proxies mais qu'AUCUN n'est
+  // valide, on refuse plutôt que de basculer silencieusement en direct (sinon la
+  // vraie IP part alors qu'il pensait être masqué). `next()` ne renvoie null que
+  // dans ce cas (0 agent) — dès qu'il y a ≥1 proxy, il ne bascule jamais en direct.
+  if (pool && pool.size === 0) throw new Error('Aucun proxy valide dans la liste — check annulé (pour ne pas exposer ton IP). Vérifie le format : host:port ou http://user:pass@host:port.');
   const results = new Array(clean.length);
   let idx = 0, done = 0;
 

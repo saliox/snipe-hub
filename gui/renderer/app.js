@@ -171,6 +171,20 @@ $('checkBtn').onclick = async () => {
 // ---------- Mode planifié ----------
 $('modeAt').onchange = $('modeMonitor').onchange = () => { $('atValue').classList.toggle('hidden', !$('modeAt').checked); };
 
+// Convertit le champ « planifié » en epoch ms : les moteurs attendent un NOMBRE
+// (ms), pas la chaîne brute. Accepte une date ISO (« 2026-07-10T15:00:00Z ») ou un
+// délai relatif (« 90s », « 5m », « 2h »). Renvoie undefined si vide/invalide.
+function parseDropAt(s) {
+  if (!s) return undefined;
+  const rel = s.match(/^(\d+(?:\.\d+)?)\s*(s|m|h)?$/i);
+  if (rel) {
+    const mult = { s: 1000, m: 60000, h: 3600000 }[(rel[2] || 's').toLowerCase()];
+    return Date.now() + Math.round(parseFloat(rel[1]) * mult);
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : undefined;
+}
+
 function snipeOpts() {
   const monitor = $('modeMonitor').checked;
   return {
@@ -178,7 +192,7 @@ function snipeOpts() {
     guildId: $('guildId').value.trim() || undefined,
     password: $('snipePassword').value || undefined,
     monitor,
-    dropAt: monitor ? undefined : ($('atValue').value.trim() || undefined),
+    dropAt: monitor ? undefined : parseDropAt($('atValue').value.trim()),
     burst: +$('burst').value || 6, spacingMs: +$('spacing').value || 30,
     leadMs: +$('lead').value || 40, connections: +$('connections').value || 3,
     autoLead: $('autoLead').checked, skipNtp: $('skipNtp').checked,
@@ -194,6 +208,7 @@ $('snipeBtn').onclick = async () => {
   if (soonMode) return;
   const o = snipeOpts();
   if (!o.name) return alert('Entre un nom / code à sniper.');
+  if (!o.monitor && !o.dropAt) return alert('Mode planifié : entre une date ISO (2026-07-10T15:00:00Z) ou un délai (90s, 5m, 2h).');
   sniping = true;
   btn.classList.add('stopping'); btn.textContent = '⏹ Arrêter';
   const r = await H.snipe(current, o);

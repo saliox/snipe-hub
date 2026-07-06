@@ -95,13 +95,35 @@ ipcMain.handle('pf:accounts', (_e, pid) => withAdapter(pid, async (a) => ({ ok: 
 ipcMain.handle('pf:accountSetActive', (_e, pid, id) => withAdapter(pid, async (a) => (a.setActive ? { ok: true, ...(await a.setActive(id)) } : { ok: false, error: 'non supporté' })));
 ipcMain.handle('pf:accountRemove', (_e, pid, id) => withAdapter(pid, async (a) => (a.removeAccount ? { ok: true, ...(await a.removeAccount(id)) } : { ok: false, error: 'non supporté' })));
 
+// Capture RÉENTRANTE des logs console des moteurs → panneau du renderer. Le patch
+// n'est installé qu'une fois ; chaque opération pousse son pid sur une pile et le
+// retire (par référence) à la fin. La vraie console est restaurée quand la pile est
+// vide → une opération qui se termine avant une autre ne laisse JAMAIS la console
+// patchée à vie (bug de l'ancien save/restore-vers-le-précédent en cas non-LIFO).
+const realConsole = { log: console.log.bind(console), error: console.error.bind(console), warn: console.warn.bind(console) };
+const logStack = [];
+function sendLog(pid, line) { try { win?.webContents.send('log', { pid, line: stripAnsi(line) }); } catch {} }
+function forwardLog(line) { const top = logStack[logStack.length - 1]; if (top) sendLog(top.pid, line); }
+function beginCapture(pid) {
+  const entry = { pid };
+  logStack.push(entry);
+  if (logStack.length === 1) {
+    console.log = (...x) => { forwardLog(x.join(' ')); realConsole.log(...x); };
+    console.error = (...x) => { forwardLog(x.join(' ')); realConsole.error(...x); };
+    console.warn = (...x) => { forwardLog(x.join(' ')); realConsole.warn(...x); };
+  }
+  return entry;
+}
+function endCapture(entry) {
+  const i = logStack.indexOf(entry);
+  if (i >= 0) logStack.splice(i, 1);
+  if (!logStack.length) { console.log = realConsole.log; console.error = realConsole.error; console.warn = realConsole.warn; }
+}
+
 // Login interactif (device code / code Epic) — les instructions sortent en console → streamées au renderer.
 ipcMain.handle('pf:login', (_e, pid, arg) => withAdapter(pid, async (a) => {
-  const send = (line) => { try { win?.webContents.send('log', { pid, line: stripAnsi(line) }); } catch {} };
-  const orig = { log: console.log, err: console.error, warn: console.warn };
-  console.log = (...x) => { send(x.join(' ')); orig.log(...x); };
-  console.error = (...x) => { send(x.join(' ')); orig.err(...x); };
-  console.warn = (...x) => { send(x.join(' ')); orig.warn(...x); };
+  const cap = beginCapture(pid);
+  const send = (line) => sendLog(pid, line);
   // Device code (MC) : ouvre la page de vérification et copie le code, en plus du journal.
   const onPrompt = ({ verificationUri, userCode }) => {
     send(`🔑 Connexion Microsoft : entre le code ${userCode} sur ${verificationUri}`);
@@ -110,7 +132,7 @@ ipcMain.handle('pf:login', (_e, pid, arg) => withAdapter(pid, async (a) => {
     try { if (verificationUri) shell.openExternal(verificationUri); } catch {}
   };
   try { await a.login(arg, { onPrompt }); return { ok: true, account: await a.whoami() }; }
-  finally { console.log = orig.log; console.error = orig.err; console.warn = orig.warn; }
+  finally { endCapture(cap); }
 }));
 
 // Snipe : lance le moteur de la plateforme et STREAME sa sortie console vers le panneau de logs.
@@ -123,17 +145,14 @@ ipcMain.handle('pf:snipe', (_e, pid, opts) => withAdapter(pid, async (a) => {
   if (running) return { ok: false, error: 'Un snipe est déjà en cours.' };
   running = true;
   stopCurrent = () => a.stop?.();
-  const send = (line) => { try { win?.webContents.send('log', { pid, line: stripAnsi(line) }); } catch {} };
-  const orig = { log: console.log, err: console.error, warn: console.warn };
-  console.log = (...x) => { send(x.join(' ')); orig.log(...x); };
-  console.error = (...x) => { send(x.join(' ')); orig.err(...x); };
-  console.warn = (...x) => { send(x.join(' ')); orig.warn(...x); };
+  const cap = beginCapture(pid);
+  const send = (line) => sendLog(pid, line);
   try {
     send(`▶️ Snipe « ${opts.name} » — ${opts.monitor ? 'surveillance' : 'planifié'}…`);
     const r = await a.snipe(opts);
     send('✅ Terminé.'); return { ok: true, result: r };
   } catch (e) { send('❌ ' + (e?.message || e)); return { ok: false, error: e?.message || String(e) }; }
-  finally { console.log = orig.log; console.error = orig.err; console.warn = orig.warn; running = false; stopCurrent = null; }
+  finally { endCapture(cap); running = false; stopCurrent = null; }
 }));
 
 // ---------- IPC : check en masse (avec proxies optionnels) ----------
