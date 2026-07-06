@@ -1,6 +1,6 @@
 // Snipe Hub — processus principal Electron. Fenêtre unique + IPC unifié au-dessus des adaptateurs
 // (platforms/* via adapters/*), watchlist commune persistée, capture des logs de snipe, auto-update GitHub.
-import { app, BrowserWindow, ipcMain, shell, clipboard } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, clipboard, Notification } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +40,18 @@ function createWindow() {
 const WATCH_FILE = () => path.join(app.getPath('userData'), 'watchlist.json');
 const readWatch = () => { try { return JSON.parse(fs.readFileSync(WATCH_FILE(), 'utf8')); } catch { return []; } };
 const writeWatch = (arr) => { try { fs.mkdirSync(path.dirname(WATCH_FILE()), { recursive: true }); fs.writeFileSync(WATCH_FILE(), JSON.stringify(arr, null, 2)); } catch {} };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Notification bureau native (Windows) + rappel dans le journal. Un clic ramène l'app au 1er plan.
+function notify(title, body) {
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body, silent: false });
+    n.on('click', () => { try { win?.show(); win?.focus(); } catch {} });
+    n.show();
+  } catch {}
+}
 
 const stripAnsi = (s) => String(s).replace(/\[[0-9;]*m/g, '');
 
@@ -150,6 +162,7 @@ ipcMain.handle('pf:snipe', (_e, pid, opts) => withAdapter(pid, async (a) => {
   try {
     send(`▶️ Snipe « ${opts.name} » — ${opts.monitor ? 'surveillance' : 'planifié'}…`);
     const r = await a.snipe(opts);
+    if (r && r.success) notify('🎯 Snipe réussi !', `« ${opts.name} » obtenu sur ${pid}.`);
     send('✅ Terminé.'); return { ok: true, result: r };
   } catch (e) { send('❌ ' + (e?.message || e)); return { ok: false, error: e?.message || String(e) }; }
   finally { endCapture(cap); running = false; stopCurrent = null; }
@@ -181,3 +194,36 @@ ipcMain.handle('watch:remove', (_e, platform, name) => {
   writeWatch(arr); return { ok: true, items: arr };
 });
 ipcMain.handle('watch:clear', () => { writeWatch([]); return { ok: true, items: [] }; });
+
+// ---------- Surveillance de la watchlist (poll périodique + notifications bureau) ----------
+let watchTimer = null;
+let watchBusy = false;
+const notifiedFree = new Set(); // n'alerte qu'UNE fois par libération (pas à chaque passage)
+
+async function sweepWatchlist() {
+  if (watchBusy) return;
+  watchBusy = true;
+  try {
+    for (const it of readWatch()) {
+      const key = it.platform + ':' + String(it.name).toLowerCase();
+      let a; try { a = await getAdapter(it.platform); } catch { continue; }
+      if (!a || !a.check) continue;
+      let r; try { r = await a.check(it.name); } catch { continue; } // pas connecté / erreur → on saute
+      if (r && r.free) {
+        if (!notifiedFree.has(key)) {
+          notifiedFree.add(key);
+          notify('🔔 Nom libre !', `« ${it.name} » est libre sur ${it.platform}.`);
+          try { win?.webContents.send('watch-free', { platform: it.platform, name: it.name }); } catch {}
+        }
+      } else if (r) { notifiedFree.delete(key); } // repris → re-notifiable s'il se relibère
+      await sleep(500); // espacement anti rate-limit entre les sondes
+    }
+  } finally { watchBusy = false; }
+}
+
+ipcMain.handle('watch:monitor', (_e, on) => {
+  if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+  notifiedFree.clear();
+  if (on) { sweepWatchlist().catch(() => {}); watchTimer = setInterval(() => sweepWatchlist().catch(() => {}), 45000); }
+  return { ok: true, monitoring: !!on };
+});

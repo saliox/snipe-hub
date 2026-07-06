@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('hub', {
   watchAdd: (item) => ipcRenderer.invoke('watch:add', item),
   watchRemove: (platform, name) => ipcRenderer.invoke('watch:remove', platform, name),
   watchClear: () => ipcRenderer.invoke('watch:clear'),
+  watchMonitor: (on) => ipcRenderer.invoke('watch:monitor', on),
+  onWatchFree: (cb) => ipcRenderer.on('watch-free', (_e, d) => cb(d)),
 
   onLog: (cb) => ipcRenderer.on('log', (_e, d) => cb(d)),
   onUpdate: (cb) => ipcRenderer.on('update-status', (_e, d) => cb(d)),

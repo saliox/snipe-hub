@@ -86,6 +86,12 @@ body::after{
 .watchlist{display:flex;flex-direction:column;gap:6px}
 .watch-row{display:flex;align-items:center;gap:7px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;animation:fadeInUp .3s var(--ease) both}
 .watch-row:hover{border-color:var(--line2)}
+.watch-row.free{border-color:var(--good);background:linear-gradient(90deg,rgba(87,242,135,.14),var(--panel2));box-shadow:0 0 12px -4px rgba(87,242,135,.6);animation:pop .3s var(--ease)}
+.watch-row.free .wname{color:var(--good);font-weight:700}
+.watch-row.free .wpf{color:var(--good)}
+/* Bouton « Surveiller » actif : pastille verte pulsée */
+.btn.on{border-color:var(--good);color:var(--good);box-shadow:0 0 10px -4px rgba(87,242,135,.6)}
+.btn.on::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--good);margin-right:6px;box-shadow:0 0 6px var(--good);animation:dotPulse 1.4s var(--ease) infinite;vertical-align:middle}
 .wname{font-weight:600}
 .wpf{margin-left:auto;font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
 .watch-row .x{background:none;border:none;color:var(--bad);cursor:pointer;font-size:17px;line-height:1;opacity:.7;transition:.15s}

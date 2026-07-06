@@ -3,6 +3,8 @@ const H = window.hub;
 let current = null;   // plateforme sélectionnée
 let info = null;      // infos de l'adaptateur courant
 let soonMode = false; // plateforme « bientôt » sélectionnée -> actions verrouillées
+const freeWatch = new Set(); // clés « platform:name » détectées libres par la surveillance
+let watching = false;        // surveillance de la watchlist active ?
 
 // Verrouille/déverrouille les actions (plateforme pas encore branchée).
 function setSoon(on) {
@@ -223,10 +225,12 @@ async function renderWatch(items) {
   if (!items || !items.length) { box.innerHTML = '<div class="muted small">Aucun nom surveillé.</div>'; return; }
   box.innerHTML = '';
   for (const it of items) {
-    const row = document.createElement('div'); row.className = 'watch-row';
+    const key = it.platform + ':' + String(it.name).toLowerCase();
+    const free = freeWatch.has(key);
+    const row = document.createElement('div'); row.className = 'watch-row' + (free ? ' free' : '');
     // textContent (pas innerHTML) : un nom surveillé est saisi par l'utilisateur → pas d'injection HTML.
-    const wn = document.createElement('span'); wn.className = 'wname'; wn.textContent = it.name;
-    const wp = document.createElement('span'); wp.className = 'wpf'; wp.textContent = it.platform;
+    const wn = document.createElement('span'); wn.className = 'wname'; wn.textContent = (free ? '🟢 ' : '') + it.name;
+    const wp = document.createElement('span'); wp.className = 'wpf'; wp.textContent = free ? 'LIBRE' : it.platform;
     const del = document.createElement('button'); del.className = 'x'; del.textContent = '×';
     del.onclick = async () => { const r = await H.watchRemove(it.platform, it.name); renderWatch(r.items); };
     row.appendChild(wn); row.appendChild(wp); row.appendChild(del); box.appendChild(row);
@@ -239,7 +243,23 @@ $('watchAddBtn').onclick = async () => {
   const r = await H.watchAdd({ platform: current, name, guildId: $('guildId').value.trim() || null });
   renderWatch(r.items); logLine(`➕ « ${name} » ajouté à la watchlist (${current}).`);
 };
-$('watchClear').onclick = async () => { const r = await H.watchClear(); renderWatch(r.items); };
+$('watchClear').onclick = async () => { freeWatch.clear(); const r = await H.watchClear(); renderWatch(r.items); };
+
+// Surveillance de la watchlist : poll en arrière-plan (côté main) + notifs bureau.
+$('watchMonitor').onclick = async () => {
+  const r = await H.watchMonitor(!watching);
+  watching = !!(r && r.monitoring);
+  $('watchMonitor').textContent = watching ? '👁 Surveillance ACTIVE' : '👁 Surveiller la watchlist';
+  $('watchMonitor').classList.toggle('on', watching);
+  if (watching) logLine('👁 Surveillance de la watchlist activée — notif dès qu\'un nom se libère.');
+  else { freeWatch.clear(); logLine('👁 Surveillance arrêtée.'); const w = await H.watchGet(); renderWatch(w.items); }
+};
+H.onWatchFree && H.onWatchFree(async (d) => {
+  if (!d) return;
+  freeWatch.add(d.platform + ':' + String(d.name).toLowerCase());
+  logLine(`🔔 « ${d.name} » est LIBRE sur ${d.platform} !`);
+  const w = await H.watchGet(); renderWatch(w.items);
+});
 
 // ---------- Check en masse ----------
 H.onBulk((d) => { if (d && d.total) $('bulkProgress').textContent = `${d.done}/${d.total}…`; });

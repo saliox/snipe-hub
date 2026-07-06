@@ -1,6 +1,6 @@
 {
   "name": "snipe-hub",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Snipe Hub — hub de sniping multi-plateforme (Minecraft, Discord vanity, Fortnite/Epic, Roblox, Twitch, X) : moteur commun (auth, sync NTP, burst), watchlist unifiée, check en masse proxifié, auto-update GitHub",
   "type": "module",
   "main": "gui/main.js",
