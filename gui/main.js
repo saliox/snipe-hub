@@ -1,6 +1,6 @@
 // Snipe Hub — processus principal Electron. Fenêtre unique + IPC unifié au-dessus des adaptateurs
 // (platforms/* via adapters/*), watchlist commune persistée, capture des logs de snipe, auto-update GitHub.
-import { app, BrowserWindow, ipcMain, shell, clipboard, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, clipboard, Notification, session } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,11 +29,28 @@ function createWindow() {
     width: 1060, height: 720, minWidth: 900, minHeight: 600,
     backgroundColor: '#080a0f', title: 'Snipe Hub',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,            // renderer en bac à sable
+      webviewTag: false,        // pas de <webview>
+      spellcheck: false,
+      devTools: !app.isPackaged, // DevTools désactivés en version packagée
+    },
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+
+  // Sécurité : aucune navigation hors de l'app, aucune fenêtre enfant ;
+  // les liens externes s'ouvrent dans le navigateur système.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://')) e.preventDefault();
+  });
 }
 
 // ---------- Watchlist unifiée (userData/watchlist.json) : { platform, name, guildId?, addedAt } ----------
@@ -81,10 +98,27 @@ const stripAnsi = (s) => String(s).replace(/\[[0-9;]*m/g, '');
 app.whenReady().then(() => {
   initDataDirs();
   applySettings(readSettings());
+
+  // Durcissement session : refuse TOUTES les permissions (caméra, micro, géo,
+  // notifications, etc.) — l'app n'en a besoin d'aucune côté renderer.
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+
   createWindow();
   try { initUpdater(() => win); setTimeout(() => checkForUpdates({ silent: true }).catch(() => {}), 4000); } catch {}
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
+// Défense en profondeur : applique les gardes à TOUT webContents créé, et
+// interdit l'attachement de <webview>.
+app.on('web-contents-created', (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  contents.on('will-navigate', (e, url) => { if (!url.startsWith('file://')) e.preventDefault(); });
+  contents.on('will-attach-webview', (e) => e.preventDefault());
+});
+
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 // ---------- IPC : méta ----------
