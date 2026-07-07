@@ -4,7 +4,10 @@ export const PLATFORMS = [
   { id: 'mc',      label: 'Minecraft',        emoji: '🟩', ready: true,  load: () => import('./mc.js') },
   { id: 'discord', label: 'Discord vanity',   emoji: '💬', ready: true,  load: () => import('./discord.js') },
   { id: 'ftn',     label: 'Fortnite / Epic',  emoji: '🎮', ready: true,  load: () => import('./ftn.js') },
-  { id: 'roblox',  label: 'Roblox',           emoji: '🟥', ready: true,  load: () => import('./roblox.js') },
+  // Roblox : repassé en « bientôt » tant que le login n'est pas finalisé — le flux
+  // actuel collecte un mot de passe en clair pour un adaptateur non abouti (risque
+  // inutile). Le loader reste en place pour réactiver d'un flip quand ce sera prêt.
+  { id: 'roblox',  label: 'Roblox',           emoji: '🟥', ready: false, soon: true, needs: 'Login Roblox en finalisation — bientôt disponible.', load: () => import('./roblox.js') },
   { id: 'twitch',  label: 'Twitch',           emoji: '🟪', ready: true,  load: () => import('./twitch.js') },
   { id: 'x',       label: 'X (Twitter)',      emoji: '𝕏',  ready: true,  load: () => import('./x.js') },
 ];
