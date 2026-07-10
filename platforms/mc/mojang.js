@@ -43,6 +43,8 @@ export async function nameStatus(name, accessToken) {
 }
 
 // Vérifie que le nom respecte les règles Minecraft (3-16 car., [A-Za-z0-9_]).
+// Le typeof évite que null/undefined soient coercés en "null"/"undefined",
+// qui passeraient la regex comme des pseudos valides.
 export function validName(name) {
-  return /^[A-Za-z0-9_]{3,16}$/.test(name);
+  return typeof name === 'string' && /^[A-Za-z0-9_]{3,16}$/.test(name);
 }
