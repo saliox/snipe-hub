@@ -20,9 +20,15 @@
     "android": {
       "package": "com.saliox.snipehub",
       "edgeToEdgeEnabled": true,
-      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS"
+      ]
     },
-    "plugins": ["expo-secure-store"],
+    "plugins": ["expo-secure-store", "expo-notifications"],
     "extra": {
       "updateRepo": "saliox/snipe-hub"
     }

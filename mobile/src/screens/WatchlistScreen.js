@@ -1,10 +1,12 @@
 // Watchlist unifiée : liste des noms/codes surveillés, check groupé (surligne
 // ceux qui se sont libérés), suppression et historique des snipes.
 import React, { useEffect, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Switch } from 'react-native';
 import { Card, CardTitle, Button, Muted } from '../ui/components.js';
-import { getWatch, removeWatch, clearWatch, getHistory } from '../engine/storage.js';
+import { getWatch, removeWatch, clearWatch, getHistory, getSettings } from '../engine/storage.js';
 import { ADAPTERS } from '../engine/adapters.js';
+import { registerBackground, unregisterBackground, isBackgroundRegistered } from '../engine/background.js';
+import { ensureNotifPermissions } from '../engine/notify.js';
 import { theme } from '../theme.js';
 
 export default function WatchlistScreen() {
@@ -12,9 +14,32 @@ export default function WatchlistScreen() {
   const [status, setStatus] = useState({}); // id -> free|null
   const [checking, setChecking] = useState(false);
   const [history, setHistory] = useState([]);
+  const [bgOn, setBgOn] = useState(false);
+  const [bgBusy, setBgBusy] = useState(false);
+  const [bgMsg, setBgMsg] = useState('');
 
   async function refresh() { setItems(await getWatch()); setHistory(await getHistory()); }
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); (async () => {
+    const reg = await isBackgroundRegistered();
+    const s = await getSettings();
+    setBgOn(reg || !!s.bgMonitor);
+  })(); }, []);
+
+  async function toggleBg(next) {
+    setBgBusy(true); setBgMsg('');
+    try {
+      if (next) {
+        const granted = await ensureNotifPermissions();
+        if (!granted) { setBgMsg('Autorise les notifications pour recevoir les résultats.'); }
+        const r = await registerBackground();
+        if (r.ok) { setBgOn(true); setBgMsg(granted ? 'Actif — l\'OS réveille l\'app ~toutes les 15 min+.' : 'Actif, mais notifs désactivées.'); }
+        else { setBgOn(false); setBgMsg(r.reason || 'Impossible d\'activer.'); }
+      } else {
+        await unregisterBackground();
+        setBgOn(false); setBgMsg('Désactivé.');
+      }
+    } finally { setBgBusy(false); }
+  }
 
   async function checkAll() {
     setChecking(true);
@@ -29,6 +54,20 @@ export default function WatchlistScreen() {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: theme.space, paddingBottom: 40 }}>
+      <Card>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <CardTitle>🌙 Surveillance en arrière-plan</CardTitle>
+          <View style={{ flex: 1 }} />
+          <Switch value={bgOn} onValueChange={toggleBg} disabled={bgBusy} trackColor={{ true: theme.accent }} />
+        </View>
+        <Muted>
+          L'app sonde la watchlist même fermée et t'envoie une notif dès qu'un nom se libère
+          (snipe tenté automatiquement si tu es connecté). Réveils cadencés par l'OS (≥ 15 min),
+          non garantis à la seconde — pour un drop précis, garde l'app ouverte.
+        </Muted>
+        {bgMsg ? <Text style={st.bgMsg}>{bgMsg}</Text> : null}
+      </Card>
+
       <Card>
         <CardTitle right={<Button title="Tout vérifier" busy={checking} onPress={checkAll} />}>👁 Watchlist</CardTitle>
         {items.length === 0
@@ -82,4 +121,5 @@ const st = StyleSheet.create({
   name: { color: theme.text, fontWeight: '600', fontSize: 14 },
   free: { marginLeft: 10, fontWeight: '800', fontSize: 12 },
   rm: { color: theme.faint, fontSize: 18, paddingHorizontal: 6 },
+  bgMsg: { color: theme.accent, fontSize: 12, marginTop: 8 },
 });

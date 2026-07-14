@@ -7,6 +7,7 @@ import SnipeScreen from './src/screens/SnipeScreen.js';
 import WatchlistScreen from './src/screens/WatchlistScreen.js';
 import SettingsScreen from './src/screens/SettingsScreen.js';
 import { hydrateConfig } from './src/engine/config.js';
+import { setupNotifications } from './src/engine/notify.js';
 import { theme } from './src/theme.js';
 
 const APP_VERSION = '0.4.0';
@@ -20,7 +21,9 @@ export default function App() {
   const [tab, setTab] = useState('snipe');
   const [ready, setReady] = useState(false);
 
-  useEffect(() => { hydrateConfig().finally(() => setReady(true)); }, []);
+  useEffect(() => {
+    Promise.all([hydrateConfig(), setupNotifications()]).finally(() => setReady(true));
+  }, []);
 
   const topPad = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 52;
 

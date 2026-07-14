@@ -4,6 +4,7 @@
 import { syncClock } from './time.js';
 import { log } from './net.js';
 import { pushHistory } from './storage.js';
+import { notify } from './notify.js';
 
 // Parse l'instant du drop : ISO ("2026-07-10T15:00:00Z"), relatif ("90s", "5m"),
 // ou epoch ms. Renvoie un timestamp ms, ou null.
@@ -43,6 +44,11 @@ export function startSnipe(adapter, opts) {
     }
     if (!result.stopped) {
       await pushHistory({ platform: adapter.id, name: opts.name, ok: !!result.success });
+      // Notif du résultat (utile si l'app est passée en arrière-plan pendant le snipe).
+      notify(
+        result.success ? '🎯 Snipe réussi' : 'Snipe terminé',
+        `${adapter.label} · ${opts.name}${result.success ? ' récupéré !' : ' — échec'}`,
+      );
     }
     return result;
   })();

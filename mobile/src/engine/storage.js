@@ -17,7 +17,7 @@ async function setJSON(key, value) {
 }
 
 // --- Réglages (IDs d'app pour MC/Epic, proxies par défaut, etc.) ---
-export const DEFAULT_SETTINGS = { msClientId: '', epicClientId: '', epicClientSecret: '', discordUA: '' };
+export const DEFAULT_SETTINGS = { msClientId: '', epicClientId: '', epicClientSecret: '', discordUA: '', bgMonitor: false };
 export async function getSettings() { return { ...DEFAULT_SETTINGS, ...(await getJSON(K.settings, {})) }; }
 export async function saveSettings(patch) {
   const cur = await getSettings();
