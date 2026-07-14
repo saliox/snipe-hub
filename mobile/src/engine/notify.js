@@ -48,3 +48,18 @@ export async function notify(title, body) {
     });
   } catch { /* perms manquantes ou indispo */ }
 }
+
+// Notif PROGRAMMÉE à un instant précis (fireAtMs, epoch ms). Contrairement au
+// burst, une notif datée se déclenche à l'heure exacte même app fermée — idéale
+// pour rappeler d'ouvrir l'app juste avant un drop planifié. Renvoie l'id (ou null).
+export async function scheduleReminder(title, body, fireAtMs) {
+  const seconds = Math.max(1, Math.round((fireAtMs - Date.now()) / 1000));
+  const T = Notifications.SchedulableTriggerInputTypes;
+  const trigger = T ? { type: T.TIME_INTERVAL, seconds, repeats: false } : { seconds };
+  try {
+    return await Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: 'default' },
+      trigger,
+    });
+  } catch { return null; }
+}

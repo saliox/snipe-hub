@@ -6,8 +6,9 @@ import { Card, CardTitle, Button, Input, Pill, Muted, Label } from '../ui/compon
 import LogView from '../ui/LogView.js';
 import LoginModal from '../ui/LoginModal.js';
 import { ADAPTERS, PLATFORM_ORDER } from '../engine/adapters.js';
-import { startSnipe } from '../engine/runner.js';
+import { startSnipe, parseDropAt } from '../engine/runner.js';
 import { addWatch } from '../engine/storage.js';
+import { ensureNotifPermissions, scheduleReminder } from '../engine/notify.js';
 import { theme } from '../theme.js';
 
 export default function SnipeScreen() {
@@ -24,6 +25,7 @@ export default function SnipeScreen() {
   const [guildId, setGuildId] = useState('');
   const [mode, setMode] = useState('monitor');
   const [atValue, setAtValue] = useState('');
+  const [reminderMsg, setReminderMsg] = useState('');
   const [showAdv, setShowAdv] = useState(false);
   const [burst, setBurst] = useState('6');
   const [spacing, setSpacing] = useState('30');
@@ -65,6 +67,21 @@ export default function SnipeScreen() {
   async function addToWatch() {
     if (!name.trim()) return;
     await addWatch({ platform: pid, name: name.trim(), extra: { guildId: guildId.trim() } });
+  }
+
+  // Programme une notif ~2 min avant le drop (rappel d'ouvrir l'app pour tirer).
+  async function scheduleReminderForDrop() {
+    setReminderMsg('');
+    const dropAt = parseDropAt(atValue);
+    if (!dropAt) { setReminderMsg('Instant du drop invalide (ex : 2026-07-10T15:00:00Z ou 90s).'); return; }
+    const granted = await ensureNotifPermissions();
+    if (!granted) { setReminderMsg('Autorise les notifications pour recevoir le rappel.'); return; }
+    const lead = 2 * 60 * 1000;
+    const fireAt = (dropAt - lead > Date.now() + 5000) ? dropAt - lead : Math.max(Date.now() + 5000, dropAt - 10000);
+    const id = await scheduleReminder('⏰ Drop imminent', `${adapter.label} · ${name.trim() || 'ton snipe'} — ouvre Snipe Hub pour tirer !`, fireAt);
+    if (!id) { setReminderMsg('Impossible de programmer le rappel.'); return; }
+    const mins = Math.round((fireAt - Date.now()) / 60000);
+    setReminderMsg(`✓ Rappel programmé (${mins <= 0 ? 'dans <1 min' : 'dans ~' + mins + ' min'}).`);
   }
 
   const freeColor = checkResult == null ? theme.muted
@@ -127,8 +144,13 @@ export default function SnipeScreen() {
           <Pill label="⏱ Planifié" active={mode === 'at'} onPress={() => setMode('at')} />
         </View>
         {mode === 'at' && (
-          <Input value={atValue} onChangeText={setAtValue} autoCapitalize="none"
-            placeholder="2026-07-10T15:00:00Z  ou  90s" style={{ marginTop: 8 }} />
+          <View>
+            <Input value={atValue} onChangeText={setAtValue} autoCapitalize="none"
+              placeholder="2026-07-10T15:00:00Z  ou  90s" style={{ marginTop: 8 }} />
+            <Button title="⏰ Me rappeler avant le drop" variant="ghost" style={{ marginTop: 8 }}
+              onPress={scheduleReminderForDrop} />
+            {reminderMsg ? <Muted style={{ marginTop: 6, color: theme.accent }}>{reminderMsg}</Muted> : null}
+          </View>
         )}
 
         <TouchableOpacity onPress={() => setShowAdv((v) => !v)} style={{ marginTop: 12 }}>

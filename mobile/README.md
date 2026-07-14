@@ -118,3 +118,11 @@ pendant une surveillance).
   (le mode « Surveiller » ou « Planifié » de l'écran Snipe tire alors avec la précision maximale).
 - Nécessite un **dev-build** (pas Expo Go) et l'autorisation **Notifications** (demandée à l'activation).
 - Aucun JS ne tourne en continu en fond : entre deux réveils, l'app est suspendue.
+
+### Rappel avant un drop planifié
+
+Pour un drop dont tu connais l'heure : en mode **« Planifié »**, saisis l'instant puis
+**« ⏰ Me rappeler avant le drop »**. Une notification **datée** (`expo-notifications`) est
+programmée ~2 min avant — elle se déclenche à l'heure **exacte** même app fermée (contrairement
+au burst), et te ramène à temps pour tirer au premier plan avec la précision maximale. Ce rappel
+fonctionne aussi en **Expo Go** (notif locale).
