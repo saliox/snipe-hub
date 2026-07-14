@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Snipe Hub",
+    "slug": "snipe-hub",
+    "version": "0.4.0",
+    "orientation": "portrait",
+    "scheme": "snipehub",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0d0d10",
+    "primaryColor": "#ff6b6f",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "bundleIdentifier": "com.saliox.snipehub",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["fetch"]
+      }
+    },
+    "android": {
+      "package": "com.saliox.snipehub",
+      "edgeToEdgeEnabled": true,
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+    },
+    "plugins": ["expo-secure-store"],
+    "extra": {
+      "updateRepo": "saliox/snipe-hub"
+    }
+  }
+}
