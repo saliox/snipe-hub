@@ -28,10 +28,11 @@ export const ADAPTERS = {
   },
   ftn: {
     id: 'ftn', label: 'Fortnite / Epic', emoji: '🎮', color: '#4f9dff',
-    target: 'pseudo', loginKind: 'code',
-    needs: 'Compte Epic (authorizationCode). Clique « Obtenir un code » pour ouvrir la page Epic.',
+    target: 'pseudo', loginKind: 'code', multiAccount: true,
+    needs: 'Compte(s) Epic (authorizationCode). « Obtenir un code » ouvre la page Epic. Tu peux ajouter plusieurs comptes.',
     validName: ftn.validName,
     whoami: ftn.whoami, logout: ftn.logout,
+    accountsList: ftn.listAccounts, setActive: ftn.setActive, removeAccount: ftn.removeAccount,
     async check(name) { const r = await ftn.check(name); return { free: r.free, note: r.rateLimited ? 'rate-limité' : null }; },
     snipe: ftn.snipe,
     engine: ftn,

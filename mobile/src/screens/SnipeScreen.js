@@ -8,6 +8,7 @@ import LoginModal from '../ui/LoginModal.js';
 import { ADAPTERS, PLATFORM_ORDER } from '../engine/adapters.js';
 import { startSnipe, parseDropAt } from '../engine/runner.js';
 import { addWatch } from '../engine/storage.js';
+import { runBulk } from '../engine/bulk.js';
 import { ensureNotifPermissions, scheduleReminder } from '../engine/notify.js';
 import { theme } from '../theme.js';
 
@@ -15,7 +16,15 @@ export default function SnipeScreen() {
   const [pid, setPid] = useState('mc');
   const adapter = ADAPTERS[pid];
   const [account, setAccount] = useState(null);
+  const [accountsData, setAccountsData] = useState(null); // multi-comptes (Epic)
   const [loginVisible, setLoginVisible] = useState(false);
+
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkNames, setBulkNames] = useState('');
+  const [bulkConc, setBulkConc] = useState('12');
+  const [bulkResults, setBulkResults] = useState(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState('');
 
   const [checkName, setCheckName] = useState('');
   const [checkResult, setCheckResult] = useState(null);
@@ -35,8 +44,12 @@ export default function SnipeScreen() {
   const [running, setRunning] = useState(false);
   const control = useRef(null);
 
-  async function refreshAccount() { try { setAccount(await adapter.whoami()); } catch { setAccount(null); } }
-  useEffect(() => { refreshAccount(); setCheckResult(null); }, [pid]);
+  async function refreshAccount() {
+    try { setAccount(await adapter.whoami()); } catch { setAccount(null); }
+    if (adapter.accountsList) { try { setAccountsData(await adapter.accountsList()); } catch { setAccountsData(null); } }
+    else setAccountsData(null);
+  }
+  useEffect(() => { refreshAccount(); setCheckResult(null); setBulkResults(null); }, [pid]);
 
   async function doCheck() {
     if (!checkName.trim()) return;
@@ -49,6 +62,24 @@ export default function SnipeScreen() {
   }
 
   async function doLogout() { await adapter.logout(); refreshAccount(); }
+  async function pickAccount(id) { try { await adapter.setActive(id); } catch {} refreshAccount(); }
+  async function dropAccount(id) { try { await adapter.removeAccount(id); } catch {} refreshAccount(); }
+
+  async function runBulkCheck() {
+    const names = bulkNames.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+    if (!names.length) return;
+    setBulkRunning(true); setBulkResults(null); setBulkProgress('');
+    try {
+      const res = await runBulk({
+        names, check: adapter.check, concurrency: Number(bulkConc) || 12,
+        onProgress: ({ done, total }) => setBulkProgress(`${done}/${total}`),
+      });
+      // Libres d'abord, puis pris, puis indéterminés.
+      res.sort((a, b) => (a.free === true ? 0 : a.free === false ? 1 : 2) - (b.free === true ? 0 : b.free === false ? 1 : 2));
+      setBulkResults(res);
+    } catch (e) { setBulkProgress(e.message); }
+    finally { setBulkRunning(false); }
+  }
 
   function launch() {
     if (!name.trim()) return;
@@ -107,9 +138,24 @@ export default function SnipeScreen() {
           <Text style={st.acct}>{account ? account.name : 'Non connecté'}</Text>
           <View style={{ flex: 1 }} />
           {account
-            ? <Button title="Déconnexion" variant="ghost" onPress={doLogout} />
+            ? <Button title={adapter.multiAccount ? '+ Compte' : 'Déconnexion'} variant="ghost"
+                onPress={adapter.multiAccount ? () => setLoginVisible(true) : doLogout} />
             : <Button title="Connexion" variant="primary" onPress={() => setLoginVisible(true)} />}
         </View>
+
+        {/* Sélecteur multi-comptes (Epic) */}
+        {accountsData?.accounts?.length > 0 && (
+          <View style={st.accts}>
+            {accountsData.accounts.map((a) => (
+              <View key={a.id} style={[st.acctPill, a.active && { borderColor: adapter.color, backgroundColor: adapter.color + '22' }]}>
+                <TouchableOpacity onPress={() => pickAccount(a.id)}>
+                  <Text style={[st.acctPillTxt, a.active && { color: theme.text }]}>{a.active ? '● ' : ''}{a.label}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => dropAccount(a.id)}><Text style={st.acctPillX}> ✕</Text></TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
       </Card>
 
       {/* Check de dispo */}
@@ -178,6 +224,39 @@ export default function SnipeScreen() {
         </View>
       </Card>
 
+      {/* Check en masse */}
+      <Card>
+        <TouchableOpacity onPress={() => setBulkOpen((v) => !v)}>
+          <CardTitle>{bulkOpen ? '▾' : '▸'} 📋 Check en masse</CardTitle>
+        </TouchableOpacity>
+        {bulkOpen && (
+          <View>
+            <Input value={bulkNames} onChangeText={setBulkNames} multiline numberOfLines={4}
+              autoCapitalize="none" autoCorrect={false} placeholder="un nom par ligne…"
+              style={{ minHeight: 90, textAlignVertical: 'top' }} />
+            <View style={[st.row, { marginTop: 10 }]}>
+              <Button title="Vérifier tout" busy={bulkRunning} onPress={runBulkCheck} />
+              <Muted style={{ marginLeft: 10 }}>{bulkProgress}</Muted>
+              <View style={{ flex: 1 }} />
+              <View style={{ width: 92 }}><NumField label="Concur." value={bulkConc} onChange={setBulkConc} /></View>
+            </View>
+            {bulkResults && (
+              <View style={{ marginTop: 10 }}>
+                <Muted>{bulkResults.filter((r) => r.free === true).length} libre(s) sur {bulkResults.length}</Muted>
+                {bulkResults.map((r, i) => (
+                  <View key={i} style={st.bulkRow}>
+                    <Text style={{ color: r.free === true ? theme.green : r.free === false ? theme.faint : theme.yellow, fontWeight: '600', fontSize: 13 }}>
+                      {r.free === true ? '✅' : r.free === false ? '❌' : '⚠️'} {r.name}
+                    </Text>
+                    {r.note ? <Text style={st.bulkNote}>{r.note}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </Card>
+
       {/* Journal */}
       <Card>
         <CardTitle>📜 Journal</CardTitle>
@@ -208,4 +287,10 @@ const st = StyleSheet.create({
   advToggle: { color: theme.accent, fontWeight: '600', fontSize: 13 },
   advBox: { marginTop: 10, padding: 10, backgroundColor: theme.bg2, borderRadius: theme.radiusSm, borderWidth: 1, borderColor: theme.cardBorder },
   advRow: { flexDirection: 'row' },
+  accts: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  acctPill: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.cardBorder, backgroundColor: theme.bg2, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12, marginRight: 8, marginBottom: 8 },
+  acctPillTxt: { color: theme.muted, fontWeight: '600', fontSize: 13 },
+  acctPillX: { color: theme.faint, fontSize: 13, fontWeight: '700' },
+  bulkRow: { paddingVertical: 6, borderBottomWidth: 1, borderColor: theme.cardBorder },
+  bulkNote: { color: theme.faint, fontSize: 11, marginTop: 2 },
 });

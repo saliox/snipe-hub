@@ -93,8 +93,19 @@ Les secrets ne quittent jamais l'appareil (SecureStore).
   Pour du SNTP réel sub-100 ms, faire un dev-build avec `react-native-udp`.
 - **Burst** : pas de pool `undici` bas-niveau ; on pré-chauffe les sockets TLS puis on tire
   des `fetch()` concurrents avec abort-on-win. Suffisant pour la plupart des drops.
-- **Non encore porté** : check en masse proxifié, multi-comptes Epic, Roblox/Twitch/X
-  (emplacements présents côté desktop, à venir ici).
+- **Check en masse** : porté (concurrence bornée), **mais sans rotation de proxies** — le
+  `fetch` RN ne peut pas router par proxy arbitraire. Les checks partent de l'IP de l'appareil.
+- **Non encore porté** : proxies (check en masse / snipe), Roblox / Twitch / X.
+
+## Check en masse & multi-comptes
+
+- **Check en masse** (écran Snipe → section « 📋 Check en masse ») : colle une liste de noms
+  (1 par ligne), règle la concurrence, et obtiens le statut libre/pris de chacun, triés (libres
+  d'abord).
+- **Multi-comptes Epic** : ajoute plusieurs comptes Epic (bouton « + Compte » → colle un autre
+  `authorizationCode`). Des pastilles sous le statut permettent de choisir le compte **actif**
+  (celui qui sert au check/snipe) ou d'en retirer un. La migration depuis l'ancien mono-compte
+  est automatique.
 
 ## Arrière-plan & notifications
 
