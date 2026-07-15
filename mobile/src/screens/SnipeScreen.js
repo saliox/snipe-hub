@@ -32,6 +32,7 @@ export default function SnipeScreen() {
 
   const [name, setName] = useState('');
   const [guildId, setGuildId] = useState('');
+  const [snipePassword, setSnipePassword] = useState('');
   const [mode, setMode] = useState('monitor');
   const [atValue, setAtValue] = useState('');
   const [reminderMsg, setReminderMsg] = useState('');
@@ -85,7 +86,7 @@ export default function SnipeScreen() {
     if (!name.trim()) return;
     setRunning(true);
     const ctl = startSnipe(adapter, {
-      name: name.trim(), guildId: guildId.trim(),
+      name: name.trim(), guildId: guildId.trim(), password: snipePassword,
       mode, at: atValue,
       burst: Number(burst) || 6, spacingMs: Number(spacing) || 30, leadMs: Number(lead) || 40,
       skipNtp,
@@ -183,6 +184,11 @@ export default function SnipeScreen() {
         {adapter.needsGuild && (
           <Input value={guildId} onChangeText={setGuildId} keyboardType="number-pad"
             placeholder="ID de ton serveur" style={{ marginTop: 8 }} />
+        )}
+        {adapter.needsPassword && (
+          <Input value={snipePassword} onChangeText={setSnipePassword} secureTextEntry
+            autoCapitalize="none" autoCorrect={false}
+            placeholder="mot de passe Roblox (jamais stocké — 1000 Robux/succès)" style={{ marginTop: 8 }} />
         )}
 
         <View style={[st.row, { marginTop: 10 }]}>

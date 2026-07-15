@@ -40,8 +40,12 @@ export default function LoginModal({ adapter, visible, onClose, onDone }) {
 
   async function submitToken() {
     setBusy(true); setErr('');
-    try { const r = await adapter.engine.addTokens(token); onDone?.(); onClose?.(); }
-    catch (e) { setErr(e.message); } finally { setBusy(false); }
+    try {
+      // Discord expose addTokens (multi-bots) ; Twitch/X/Roblox exposent setToken.
+      const fn = adapter.engine.setToken || adapter.engine.addTokens;
+      await fn(token);
+      onDone?.(); onClose?.();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
   async function submitCode() {
@@ -77,13 +81,14 @@ export default function LoginModal({ adapter, visible, onClose, onDone }) {
               </View>
             )}
 
-            {kind === 'token' && (
+            {(kind === 'token' || kind === 'cookie') && (
               <View>
-                <Label>Token(s) de bot — 1 par ligne</Label>
+                <Label>{adapter?.id === 'discord' ? 'Token(s) de bot — 1 par ligne' : (kind === 'cookie' ? 'Cookie / identifiants' : 'Jeton')}</Label>
                 <Input value={token} onChangeText={setToken} multiline numberOfLines={4}
-                  autoCapitalize="none" autoCorrect={false} placeholder="MTIx…&#10;MjZ…"
+                  autoCapitalize="none" autoCorrect={false}
+                  placeholder={adapter?.loginPlaceholder || 'colle ici…'}
                   style={{ minHeight: 100, textAlignVertical: 'top' }} />
-                <Button title="Ajouter" variant="primary" busy={busy} style={{ marginTop: 10 }} onPress={submitToken} />
+                <Button title={adapter?.id === 'discord' ? 'Ajouter' : 'Connexion'} variant="primary" busy={busy} style={{ marginTop: 10 }} onPress={submitToken} />
               </View>
             )}
 

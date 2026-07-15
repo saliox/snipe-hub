@@ -3,6 +3,9 @@
 import * as mc from './mc.js';
 import * as discord from './discord.js';
 import * as ftn from './ftn.js';
+import * as twitch from './twitch.js';
+import * as x from './x.js';
+import * as roblox from './roblox.js';
 
 export const ADAPTERS = {
   mc: {
@@ -37,7 +40,40 @@ export const ADAPTERS = {
     snipe: ftn.snipe,
     engine: ftn,
   },
+  twitch: {
+    id: 'twitch', label: 'Twitch', emoji: '💜', color: '#9146ff',
+    target: 'login', loginKind: 'token',
+    loginPlaceholder: 'jeton OAuth (auth-token de ta session twitch.tv)…',
+    needs: 'Jeton OAuth Twitch (« auth-token » de session). La dispo est fiable ; le renommage GQL est restreint par Twitch (« à confirmer »).',
+    validName: twitch.validName,
+    whoami: twitch.whoami, logout: twitch.logout,
+    async check(name) { const r = await twitch.checkAvailable(name); return { free: r.free, note: r.note }; },
+    snipe: twitch.snipe,
+    engine: twitch,
+  },
+  x: {
+    id: 'x', label: 'X (Twitter)', emoji: '✖️', color: '#1d9bf0',
+    target: '@handle', loginKind: 'token', loginMultiline: true,
+    loginPlaceholder: 'cookies x.com : auth_token=…; ct0=…',
+    needs: 'Cookies de session X (auth_token + ct0, via DevTools). API X verrouillée : la surveillance ALERTE dès qu\'un @handle se libère ; renommage « à confirmer ».',
+    validName: x.validName,
+    whoami: x.whoami, logout: x.logout,
+    async check(name) { const r = await x.checkAvailable(name); return { free: r.free, note: r.note }; },
+    snipe: x.snipe,
+    engine: x,
+  },
+  roblox: {
+    id: 'roblox', label: 'Roblox', emoji: '🟥', color: '#e2231a',
+    target: 'pseudo', loginKind: 'cookie', needsPassword: true,
+    loginPlaceholder: 'cookie .ROBLOSECURITY (_|WARNING…|_…)',
+    needs: 'Cookie .ROBLOSECURITY + mot de passe au snipe. ⚠️ Un renommage RÉUSSI coûte 1000 Robux (jamais débité si le nom est déjà pris).',
+    validName: roblox.validName,
+    whoami: roblox.whoami, logout: roblox.logout,
+    async check(name) { const r = await roblox.validateName(name); return { free: r.free, note: r.note }; },
+    snipe: roblox.snipe,
+    engine: roblox,
+  },
 };
 
-export const PLATFORM_ORDER = ['mc', 'discord', 'ftn'];
+export const PLATFORM_ORDER = ['mc', 'discord', 'ftn', 'twitch', 'x', 'roblox'];
 export function getAdapter(id) { return ADAPTERS[id]; }

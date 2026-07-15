@@ -33,7 +33,7 @@ export function startSnipe(adapter, opts) {
     let result;
     try {
       result = await adapter.snipe({
-        name: opts.name, guildId: opts.guildId,
+        name: opts.name, guildId: opts.guildId, password: opts.password,
         monitor: opts.mode === 'monitor', dropAt,
         burst: opts.burst, spacingMs: opts.spacingMs, leadMs: opts.leadMs,
         offset, skipNtp: opts.skipNtp, shouldStop,

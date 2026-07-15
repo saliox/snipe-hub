@@ -1,9 +1,9 @@
 # 📱 Snipe Hub Mobile (bêta)
 
 Port **iOS + Android** de [Snipe Hub](../README.md) — le hub de sniping multi-plateforme
-(**Minecraft**, **Discord vanity**, **Fortnite/Epic**). Une seule base de code
-**Expo / React Native** qui reprend le moteur commun du desktop (auth, sync horloge,
-burst timing), la **watchlist unifiée**, le **check de dispo** et le **journal en direct**.
+(**Minecraft**, **Discord vanity**, **Fortnite/Epic**, **Twitch**, **X**, **Roblox**). Une
+seule base de code **Expo / React Native** qui reprend le moteur commun du desktop (auth, sync
+horloge, burst timing), la **watchlist unifiée**, le **check de dispo** et le **journal en direct**.
 
 > ⚠️ Bêta. Même esprit que la version desktop : aucune action ne touche un compte/serveur
 > tiers — on ne fait que renommer **ton** compte (MC/Epic) ou poser la vanity de **ton**
@@ -95,7 +95,23 @@ Les secrets ne quittent jamais l'appareil (SecureStore).
   des `fetch()` concurrents avec abort-on-win. Suffisant pour la plupart des drops.
 - **Check en masse** : porté (concurrence bornée), **mais sans rotation de proxies** — le
   `fetch` RN ne peut pas router par proxy arbitraire. Les checks partent de l'IP de l'appareil.
-- **Non encore porté** : proxies (check en masse / snipe), Roblox / Twitch / X.
+- **Non encore porté** : rotation de proxies (check en masse / snipe).
+
+## Plateformes & fiabilité du renommage
+
+| Plateforme | Connexion | Dispo / surveillance | Renommage (snipe) |
+|---|---|---|---|
+| Minecraft | Microsoft device-code | ✅ fiable | ✅ burst PUT |
+| Discord vanity | token(s) de bot | ✅ fiable | ✅ burst PATCH (multi-bots) |
+| Fortnite / Epic | authorizationCode | ✅ fiable | ✅ PUT displayName |
+| Twitch | jeton OAuth de session | ✅ fiable (Helix) | ⚠️ mutation GQL restreinte — « à confirmer » |
+| X (Twitter) | cookies auth_token + ct0 | ✅ **alerte** fiable | ⚠️ endpoint verrouillé — « à confirmer » |
+| Roblox | cookie .ROBLOSECURITY + mot de passe | ✅ fiable | ✅ PUT username — **coûte 1000 Robux/succès** |
+
+Pour Twitch et X, l'API de renommage est bridée par la plateforme : la **surveillance alerte**
+de façon fiable dès qu'un nom se libère, mais l'auto-renommage peut échouer (comportement
+identique au desktop). Roblox exige le **mot de passe** au moment du snipe (jamais stocké) et
+tout changement **réussi** débite **1000 Robux** — un nom déjà pris ne débite rien.
 
 ## Check en masse & multi-comptes
 
