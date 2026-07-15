@@ -37,16 +37,18 @@ Auto-update : **100 % GitHub Releases** de `saliox/snipe-hub` (aucune IP, aucun 
 optionnel `.env` `UPDATE_REPO=owner/name`). Crée le dépôt `saliox/snipe-hub` avant la 1re release.
 
 ## 📱 Version mobile (iOS / Android)
-Un port **Expo / React Native** vit dans [`mobile/`](mobile/) : même moteur (auth, sync horloge,
-burst), watchlist unifiée et check de dispo, adapté au tactile. Les tokens sont stockés dans le
-Keychain/Keystore de l'appareil. Voir [`mobile/README.md`](mobile/README.md) pour lancer/builder.
+Le port **Expo / React Native** vit désormais dans son propre dépôt privé :
+**[`saliox/snipe-hub-mobile`](https://github.com/saliox/snipe-hub-mobile)**. Même moteur (auth,
+sync horloge, burst), watchlist unifiée, check de dispo et 6 plateformes, adapté au tactile ; les
+tokens sont stockés dans le Keychain/Keystore de l'appareil.
 ```bash
-cd mobile && npm install && npx expo start   # Expo Go (iOS/Android), aucun build natif requis en dev
+git clone https://github.com/saliox/snipe-hub-mobile
+cd snipe-hub-mobile && npm install && npx expo start
 ```
 
 ## Statut bêta
 - ✅ Coquille + dashboard + watchlist unifiée + journal en direct + auto-update câblé.
-- ✅ Port mobile iOS/Android (Expo) : plateformes MC / Discord / Epic, login, check, snipe, watchlist.
+- ✅ Port mobile iOS/Android (Expo) — dépôt dédié `saliox/snipe-hub-mobile` (6 plateformes).
 - ✅ Les 3 moteurs se chargent via les adaptateurs (check / snipe / whoami).
 - ⏳ À polir : flux de login par plateforme (device code MC, code Epic, token Discord), les options
   avancées propres à chaque moteur (proxies MC/FTN, multi-bots Discord), et Roblox/Twitch/X.
