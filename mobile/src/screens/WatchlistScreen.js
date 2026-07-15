@@ -1,12 +1,12 @@
 // Watchlist unifiée : liste des noms/codes surveillés, check groupé (surligne
 // ceux qui se sont libérés), suppression et historique des snipes.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Switch } from 'react-native';
 import { Card, CardTitle, Button, Muted } from '../ui/components.js';
 import { getWatch, removeWatch, clearWatch, getHistory, getSettings } from '../engine/storage.js';
 import { ADAPTERS } from '../engine/adapters.js';
 import { registerBackground, unregisterBackground, isBackgroundRegistered } from '../engine/background.js';
-import { ensureNotifPermissions } from '../engine/notify.js';
+import { ensureNotifPermissions, notify } from '../engine/notify.js';
 import { theme } from '../theme.js';
 
 export default function WatchlistScreen() {
@@ -17,6 +17,9 @@ export default function WatchlistScreen() {
   const [bgOn, setBgOn] = useState(false);
   const [bgBusy, setBgBusy] = useState(false);
   const [bgMsg, setBgMsg] = useState('');
+  const [monitoring, setMonitoring] = useState(false);
+  const monRef = useRef(false);       // pilote la boucle de surveillance
+  const prevFree = useRef({});         // dernier statut connu (anti-spam de notifs)
 
   async function refresh() { setItems(await getWatch()); setHistory(await getHistory()); }
   useEffect(() => { refresh(); (async () => {
@@ -24,6 +27,35 @@ export default function WatchlistScreen() {
     const s = await getSettings();
     setBgOn(reg || !!s.bgMonitor);
   })(); }, []);
+  // Coupe la boucle si l'écran est démonté.
+  useEffect(() => () => { monRef.current = false; }, []);
+
+  // Surveillance AU PREMIER PLAN : poll continu et réactif tant que l'app est
+  // ouverte (≠ arrière-plan best-effort). Alerte dès qu'un nom passe libre.
+  async function toggleMonitor() {
+    if (monitoring) { monRef.current = false; setMonitoring(false); return; }
+    await ensureNotifPermissions();
+    monRef.current = true; setMonitoring(true);
+    (async () => {
+      while (monRef.current) {
+        const list = await getWatch();
+        for (const it of list) {
+          if (!monRef.current) break;
+          const ad = ADAPTERS[it.platform];
+          if (!ad) continue;
+          let free = null;
+          try { const r = await ad.check(it.name); free = r?.free ?? null; } catch { free = null; }
+          setStatus((s) => ({ ...s, [it.id]: free }));
+          if (free === true && prevFree.current[it.id] !== true) {
+            notify(`🔔 ${it.name} est libre`, `${ad.label} — fonce le réclamer (écran Snipe).`);
+          }
+          prevFree.current[it.id] = free;
+        }
+        // Pause ~2 s, mais réactive à l'arrêt (petits pas de 100 ms).
+        for (let i = 0; i < 20 && monRef.current; i++) await new Promise((r) => setTimeout(r, 100));
+      }
+    })();
+  }
 
   async function toggleBg(next) {
     setBgBusy(true); setBgMsg('');
@@ -89,8 +121,15 @@ export default function WatchlistScreen() {
             );
           })}
         {items.length > 0 && (
-          <Button title="Vider la watchlist" variant="ghost" style={{ marginTop: 10 }}
-            onPress={async () => { await clearWatch(); refresh(); setStatus({}); }} />
+          <View>
+            <Button
+              title={monitoring ? '⏹ Arrêter la surveillance' : '👁 Surveiller (premier plan)'}
+              variant={monitoring ? 'danger' : 'primary'} style={{ marginTop: 10 }}
+              onPress={toggleMonitor} />
+            {monitoring ? <Muted style={{ marginTop: 6 }}>Poll continu (~2 s) — alerte dès qu'un nom se libère. Garde l'app ouverte.</Muted> : null}
+            <Button title="Vider la watchlist" variant="ghost" style={{ marginTop: 8 }}
+              onPress={async () => { await clearWatch(); refresh(); setStatus({}); }} />
+          </View>
         )}
       </Card>
 

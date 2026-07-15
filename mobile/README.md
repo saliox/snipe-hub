@@ -160,6 +160,13 @@ pendant une surveillance).
 - Nécessite un **dev-build** (pas Expo Go) et l'autorisation **Notifications** (demandée à l'activation).
 - Aucun JS ne tourne en continu en fond : entre deux réveils, l'app est suspendue.
 
+### Surveillance au premier plan (réactive)
+
+Sur l'écran **Watchlist**, bouton **« 👁 Surveiller (premier plan) »** : tant que l'app est
+ouverte, un **poll continu (~2 s)** vérifie tous les noms surveillés, met à jour leur statut en
+direct et **alerte** immédiatement dès qu'un se libère. Bien plus réactif que l'arrière-plan
+(fiable à la seconde près, sans limite d'OS) — c'est le mode à utiliser quand un drop approche.
+
 ### Rappel avant un drop planifié
 
 Pour un drop dont tu connais l'heure : en mode **« Planifié »**, saisis l'instant puis
