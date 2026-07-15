@@ -39,7 +39,21 @@ mobile/
       runner.js             orchestration (parse drop, sync, stop, historique, notif)
     ui/                     composants, journal, modale de login
     screens/                Snipe, Watchlist, Réglages
+  assets/                 icône, icône adaptative, splash, favicon (générés)
+  scripts/make-assets.mjs générateur d'assets (réticule Snipe Hub, pur Node)
 ```
+
+### Icône & splash (branding)
+
+Les assets sont générés depuis le logo « réticule » de la marque, en **pur Node** (aucune
+dépendance) :
+
+```bash
+npm run assets   # (re)génère assets/icon.png, adaptive-icon.png, splash-icon.png, favicon.png
+```
+
+`app.json` les câble : icône iOS (plein cadre), **icône adaptative** Android (avant-plan
+transparent + fond `#0d0d10`), **splash** (via `expo-splash-screen`) et favicon web.
 
 Chaque adaptateur expose la même interface que le desktop : `whoami` · `check` · `snipe` ·
 `validName` · `logout`, plus le login spécifique (`device` MC / `token` Discord / `code` Epic).

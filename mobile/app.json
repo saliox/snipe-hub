@@ -8,6 +8,7 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0d0d10",
     "primaryColor": "#ff6b6f",
+    "icon": "./assets/icon.png",
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "bundleIdentifier": "com.saliox.snipehub",
@@ -20,6 +21,10 @@
     "android": {
       "package": "com.saliox.snipehub",
       "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0d0d10"
+      },
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
@@ -28,7 +33,19 @@
         "POST_NOTIFICATIONS"
       ]
     },
-    "plugins": ["expo-secure-store", "expo-notifications"],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications",
+      ["expo-splash-screen", {
+        "image": "./assets/splash-icon.png",
+        "imageWidth": 220,
+        "resizeMode": "contain",
+        "backgroundColor": "#0d0d10"
+      }]
+    ],
     "extra": {
       "updateRepo": "saliox/snipe-hub"
     }
