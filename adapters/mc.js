@@ -30,22 +30,36 @@ export default {
     return null;
   },
 
+  // mojang.isNameFree renvoie un OBJET { free: true|false|null, ... } — il faut lire le
+  // champ .free (un `!!` sur l'objet vaudrait toujours true → « libre » pour tout le monde).
   async check(name) {
-    const free = await mojang.isNameFree(name);
-    return { free: !!free };
+    const r = await mojang.isNameFree(name);
+    if (r.free == null) {
+      throw new Error(r.rateLimited ? 'Rate-limité par Mojang — réessaie dans un moment.' : `Mojang a répondu ${r.statusCode}.`);
+    }
+    return { free: r.free, uuid: r.uuid };
   },
   // Check anonyme (Mojang) → parfait pour le check en masse proxifié.
+  // core/bulk.js attend free: boolean|null (null = indéterminé), on relaie tel quel.
   async bulkChecker() {
-    return async (name, dispatcher) => { const free = await mojang.isNameFree(name, dispatcher); return { free: !!free }; };
+    return async (name, dispatcher) => {
+      const r = await mojang.isNameFree(name, dispatcher);
+      return { free: r.free };
+    };
   },
 
   // opts unifiés : { name, dropAt, monitor, connections, burst, spacingMs, leadMs, skipNtp }
   stop() { try { requestStop(); } catch { /* */ } },
 
   async snipe(o) {
-    const token = await auth.getValidToken();
+    // auth.getValidToken() renvoie { accessToken, profile } : le moteur attend la CHAÎNE
+    // (il interpole `Bearer ${token}`), sinon l'en-tête vaut « Bearer [object Object] » → 401 partout.
+    const { accessToken, profile } = await auth.getValidToken();
+    if (!profile) throw new Error("Ce compte Microsoft n'a pas de profil Java Minecraft.");
     return snipe({
-      name: o.name, token, getToken: auth.getValidToken,
+      name: o.name,
+      token: accessToken,
+      getToken: async () => (await auth.getValidToken()).accessToken,
       dropAt: o.dropAt, monitor: o.monitor,
       connections: o.connections, burst: o.burst, spacingMs: o.spacingMs, leadMs: o.leadMs, skipNtp: o.skipNtp,
     });

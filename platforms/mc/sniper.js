@@ -6,9 +6,20 @@ import { bestOffset } from './ntp.js';
 
 const HOST = 'https://api.minecraftservices.com';
 
-// Arrêt coopératif (utilisé par l'UI pour stopper le mode surveillance).
+// Arrêt coopératif (utilisé par l'UI pour stopper le mode surveillance ET le mode planifié).
 let stopFlag = false;
 export function requestStop() { stopFlag = true; }
+
+// Attente jusqu'à `target`, mais RÉACTIVE à l'arrêt : on dort par petits paliers tant
+// qu'il reste du temps, puis on finit avec sleepUntil pour la précision. Sans ça, un
+// snipe planifié dort d'un bloc jusqu'au drop : le bouton Arrêter ne fait rien et le
+// verrou global `running` de gui/main.js reste pris (plus aucun snipe possible).
+async function waitUntilOrStop(target) {
+  while (!stopFlag && Date.now() < target - 200) {
+    await sleep(Math.min(200, target - Date.now()));
+  }
+  if (!stopFlag && Date.now() < target) await sleepUntil(target, 20);
+}
 
 // Pré-établit `n` connexions TLS pour éliminer le handshake du chemin critique.
 async function warmup(pool, token, n) {
@@ -93,8 +104,9 @@ export async function snipe(opts) {
     // Pré-chauffage ~10s avant le drop pour avoir des sockets frais.
     const warmAtLocal = toLocal(dropAt - 10_000);
     if (warmAtLocal > Date.now()) {
-      await sleepUntil(warmAtLocal);
+      await waitUntilOrStop(warmAtLocal);
     }
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true, attempts: [] }; }
     // Rafraîchissement proactif juste avant le drop : sur un snipe planifié loin
     // dans le temps, le token pourrait avoir expiré depuis le démarrage.
     if (session.getToken) await refreshToken(session);
@@ -106,7 +118,8 @@ export async function snipe(opts) {
     const firstLocal = toLocal(dropAt - leadMs);
     log.info(`Rafale de ${burst} requêtes espacées de ${spacingMs} ms, ` +
       `1re à T0-${leadMs} ms. En attente...`);
-    await sleepUntil(firstLocal, 20);
+    await waitUntilOrStop(firstLocal);
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true, attempts: [] }; }
 
     let result = await fireBurst(pool, name, session, { burst, spacingMs });
     // Token expiré pile au moment du drop : rafraîchit et retente une fois.
@@ -174,13 +187,23 @@ async function monitorLoop(pool, name, session, { burst, spacingMs }) {
   let failedBursts = 0;
   while (!stopFlag) {
     polls++;
-    const { body, statusCode } = await pool.request({
+    // La sonde DOIT survivre aux coupures réseau passagères : une surveillance tourne
+    // des heures à ~1 req/s, un ECONNRESET / socket hang up est inévitable. Sans ce
+    // try/catch, la moindre erreur undici remontait jusqu'à l'UI et tuait la surveillance.
+    let body, statusCode;
+    try {
       // On sonde via l'endpoint public de Mojang par un fetch séparé serait plus
       // propre, mais rester sur le pool chaud réduit la latence de bascule.
-      path: `/minecraft/profile/name/${encodeURIComponent(name)}/available`,
-      method: 'GET',
-      headers: { authorization: `Bearer ${session.token}` },
-    });
+      ({ body, statusCode } = await pool.request({
+        path: `/minecraft/profile/name/${encodeURIComponent(name)}/available`,
+        method: 'GET',
+        headers: { authorization: `Bearer ${session.token}` },
+      }));
+    } catch (e) {
+      log.warn(`sonde ${name} : ${e.message} — nouvelle tentative dans 2 s.`);
+      await sleep(2000);
+      continue;
+    }
     let status = null;
     if (statusCode === 200) status = (await body.json()).status;
     else await body.dump();

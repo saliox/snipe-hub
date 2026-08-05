@@ -82,12 +82,20 @@ export default {
     return this.accountsList();
   },
 
+  // dc.checkVanityFree renvoie un OBJET { free: true|false|null, ... } — il faut lire le champ
+  // .free : un `!!` sur l'objet vaudrait toujours true, y compris pour un code PRIS ou un
+  // blocage Cloudflare (qui serait alors annoncé « libre » à tort).
   async check(code) {
     const bots = loadBots();
     const opts = {};
     if (bots[0]) opts.auth = dc.authHeader(bots[0].token, bots[0].type);
-    const free = await dc.checkVanityFree(code, opts);
-    return { free: !!free };
+    const r = await dc.checkVanityFree(code, opts);
+    if (r.free == null) {
+      throw new Error(r.cloudflare ? 'Bloqué par Cloudflare (1015) — attends un peu.'
+        : r.rateLimited ? 'Rate-limité par Discord — réessaie dans un moment.'
+        : `Discord a répondu ${r.statusCode}.`);
+    }
+    return { free: r.free, guild: r.guild, premiumTier: r.premiumTier };
   },
 
   // opts unifiés : { name (=code(s) séparés par des virgules), guildId, autoLead, dropAt, monitor, connections, burst, spacingMs, leadMs, skipNtp }

@@ -40,20 +40,23 @@ export default {
   async setActive(id) { accounts.setActive(id); return this.accountsList(); },
   async removeAccount(id) { accounts.removeAccount(id); return this.accountsList(); },
 
+  // accounts.getValidToken() renvoie { accessToken, accountId, displayName } : epicapi attend
+  // la CHAÎNE (`Bearer ${accessToken}`). Passer l'objet donnait « Bearer [object Object] » → 401,
+  // et la réponse d'erreur retombait en { free: null } → tout nom affiché « pris ».
   async check(name) {
-    const token = await accounts.getValidToken();
-    const st = await epic.displayNameStatus(name, token);
-    // displayNameStatus peut renvoyer un objet {free} ou un booléen selon l'implémentation
-    const free = typeof st === 'boolean' ? st : (st?.free ?? (st?.status === 'free'));
-    return { free: !!free, raw: st };
+    const { accessToken } = await accounts.getValidToken();
+    const st = await epic.displayNameStatus(name, accessToken);
+    if (st.free == null) {
+      throw new Error(st.rateLimited ? 'Rate-limité par Epic — réessaie dans un moment.' : `Epic a répondu ${st.statusCode}.`);
+    }
+    return { free: st.free, accountId: st.accountId };
   },
   // Check en masse : on récupère UN token frais puis on sonde chaque nom (via proxy si fourni).
   async bulkChecker() {
-    const token = await accounts.getValidToken();
+    const { accessToken } = await accounts.getValidToken();
     return async (name, dispatcher) => {
-      const st = await epic.displayNameStatus(name, token, dispatcher);
-      const free = typeof st === 'boolean' ? st : (st?.free ?? (st?.status === 'free'));
-      return { free: !!free };
+      const st = await epic.displayNameStatus(name, accessToken, dispatcher);
+      return { free: st.free };
     };
   },
 
@@ -61,10 +64,13 @@ export default {
   stop() { try { requestStop(); } catch { /* */ } },
 
   async snipe(o) {
-    const token = await accounts.getValidToken();
+    // Idem : le moteur documente `@param {string} opts.token` (platforms/ftn/sniper.js).
+    const { accessToken, accountId } = await accounts.getValidToken();
     const acc = await (accounts.cachedAccount?.() ?? null);
     return snipe({
-      name: o.name, token, accountId: acc?.accountId || acc?.id,
+      name: o.name,
+      token: accessToken,
+      accountId: accountId || acc?.accountId || acc?.id,
       dropAt: o.dropAt, monitor: o.monitor,
       connections: o.connections, burst: o.burst, spacingMs: o.spacingMs, leadMs: o.leadMs, skipNtp: o.skipNtp,
     });
