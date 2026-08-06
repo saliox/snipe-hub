@@ -6,7 +6,7 @@
   <title>Snipe Hub</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body class="no-target">
   <header class="topbar">
     <div class="brand">
       <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
@@ -28,8 +28,8 @@
     </div>
     <div class="topright">
       <span id="version" class="ver">v…</span>
-      <button id="historyBtn" class="btn ghost" title="Historique des snipes">📜</button>
-      <button id="settingsBtn" class="btn ghost" title="Réglages">⚙️</button>
+      <button id="historyBtn" class="btn ghost icon" title="Historique des snipes" aria-label="Historique des snipes">📜</button>
+      <button id="settingsBtn" class="btn ghost icon" title="Réglages" aria-label="Réglages">⚙️</button>
       <button id="updateBtn" class="btn ghost" title="Vérifier les mises à jour">⟳ MàJ</button>
     </div>
   </header>
@@ -39,13 +39,24 @@
       <div class="side-title">Plateformes</div>
       <div id="platforms" class="platforms"></div>
 
-      <div class="side-title">Watchlist unifiée</div>
+      <div class="side-title">Watchlist unifiée <span id="watchCount" class="cnt hidden"></span></div>
       <div id="watchlist" class="watchlist"><div class="muted small">Aucun nom surveillé.</div></div>
       <button id="watchMonitor" class="btn ghost tiny">👁 Surveiller la watchlist</button>
       <button id="watchClear" class="btn ghost tiny">Vider la watchlist</button>
     </aside>
 
     <main class="main">
+      <section id="emptyState" class="card empty-state">
+        <div class="es-ring" aria-hidden="true">🎯</div>
+        <h2>Choisis une cible pour commencer</h2>
+        <p class="muted small">Snipe Hub adapte ensuite les champs, le type de connexion et le check en masse à la plateforme choisie.</p>
+        <ol class="es-steps">
+          <li><b>1</b> <span>Clique une plateforme à gauche <span class="muted">— pastille verte = déjà connecté</span></span></li>
+          <li><b>2</b> <span>Connecte-toi si besoin <span class="muted">— token, cookie ou device code</span></span></li>
+          <li><b>3</b> <span>Vérifie un nom, puis lance le snipe <span class="muted">— ou ajoute-le à la watchlist</span></span></li>
+        </ol>
+      </section>
+
       <section id="pfHeader" class="card pf-header">
         <div class="pf-title"><span id="pfEmoji">🎯</span> <span id="pfLabel">Choisis une plateforme</span></div>
         <div id="pfNeeds" class="muted small"></div>
@@ -59,16 +70,20 @@
         <div id="accounts" class="accounts hidden"></div>
       </section>
 
-      <section class="card">
+      <section class="card" id="checkCard">
         <div class="card-title">🔎 Disponibilité</div>
         <div class="row">
           <input id="checkName" class="in grow" placeholder="pseudo / code à vérifier…" />
           <button id="checkBtn" class="btn">Vérifier</button>
         </div>
         <div id="checkResult" class="result muted">—</div>
+        <div id="checkActions" class="row check-actions hidden">
+          <button id="useForSnipe" class="btn tiny">🎯 Sniper ce nom</button>
+          <button id="useForWatch" class="btn ghost tiny">👁 + watchlist</button>
+        </div>
       </section>
 
-      <section class="card">
+      <section class="card hero" id="snipeCard">
         <div class="card-title">🎯 Snipe</div>
         <div class="row">
           <input id="snipeName" class="in grow" placeholder="pseudo / code à sniper…" />
@@ -78,16 +93,20 @@
         <div class="row wrap opts">
           <label class="opt"><input type="radio" name="mode" id="modeMonitor" checked /> Surveiller (dès que libre)</label>
           <label class="opt"><input type="radio" name="mode" id="modeAt" /> Planifié</label>
-          <input id="atValue" class="in hidden" placeholder="2026-07-10T15:00:00Z ou 90s" style="max-width:230px" />
+          <input id="atValue" class="in hidden" placeholder="2026-07-10T15:00:00Z · 90s · 5m · 2h" style="max-width:250px" />
+          <span id="atPreview" class="at-preview small"></span>
         </div>
-        <div class="row wrap opts">
-          <label class="mini">Rafale <input id="burst" class="in num" type="number" value="6" min="1" max="30" /></label>
-          <label class="mini">Espacement(ms) <input id="spacing" class="in num" type="number" value="30" /></label>
-          <label class="mini">Avance(ms) <input id="lead" class="in num" type="number" value="40" /></label>
-          <label class="mini">Connexions <input id="connections" class="in num" type="number" value="3" min="1" max="16" /></label>
-          <label class="mini"><input type="checkbox" id="autoLead" title="Discord : cale l'avance de tir sur la latence mesurée" /> Auto-lead</label>
-          <label class="mini"><input type="checkbox" id="skipNtp" /> Sans NTP</label>
-        </div>
+        <details class="adv">
+          <summary>⚙️ Options avancées <span class="adv-hint">rafale, espacement, avance, connexions</span></summary>
+          <div class="row wrap opts">
+            <label class="mini" title="Nombre de requêtes tirées d'affilée">Rafale <input id="burst" class="in num" type="number" value="6" min="1" max="30" /></label>
+            <label class="mini" title="Délai entre deux tirs de la rafale">Espacement(ms) <input id="spacing" class="in num" type="number" value="30" /></label>
+            <label class="mini" title="Tirer X ms avant l'heure cible pour absorber la latence réseau">Avance(ms) <input id="lead" class="in num" type="number" value="40" /></label>
+            <label class="mini" title="Sockets ouverts en parallèle">Connexions <input id="connections" class="in num" type="number" value="3" min="1" max="16" /></label>
+            <label class="mini"><input type="checkbox" id="autoLead" title="Discord : cale l'avance de tir sur la latence mesurée" /> Auto-lead</label>
+            <label class="mini" title="Ne pas resynchroniser l'horloge sur un serveur NTP"><input type="checkbox" id="skipNtp" /> Sans NTP</label>
+          </div>
+        </details>
         <div class="row">
           <button id="snipeBtn" class="btn primary">🎯 Lancer le snipe</button>
           <button id="watchAddBtn" class="btn ghost">+ Ajouter à la watchlist</button>
@@ -103,15 +122,24 @@
         <div class="row">
           <button id="bulkBtn" class="btn">Vérifier tout</button>
           <span id="bulkProgress" class="muted small"></span>
+          <button id="bulkCopy" class="btn ghost tiny hidden">⧉ copier les libres</button>
           <span class="spacer"></span>
           <label class="mini">Concurrence <input id="bulkConc" class="in num" type="number" value="20" min="1" max="100" /></label>
         </div>
+        <div id="bulkBar" class="bulkbar hidden"><i></i></div>
         <div id="bulkResults" class="bulk-results"></div>
       </section>
 
       <section class="card grow-card">
-        <div class="card-title">📜 Journal <button id="logClear" class="btn ghost tiny">effacer</button></div>
-        <pre id="log" class="log"></pre>
+        <div class="card-title">📜 Journal
+          <span class="spacer"></span>
+          <button id="logCopy" class="btn ghost tiny" title="Copier tout le journal">⧉ copier</button>
+          <button id="logClear" class="btn ghost tiny">effacer</button>
+        </div>
+        <div class="log-wrap">
+          <pre id="log" class="log" tabindex="0"></pre>
+          <button id="logNew" class="log-new hidden">⬇ nouvelle erreur</button>
+        </div>
       </section>
     </main>
   </div>
@@ -119,7 +147,7 @@
   <!-- Réglages -->
   <div id="settingsModal" class="modal hidden">
     <div class="modal-box">
-      <div class="modal-head">⚙️ Réglages <button id="settingsClose" class="modal-x" title="Fermer">×</button></div>
+      <div class="modal-head">⚙️ Réglages <button id="settingsClose" class="modal-x" title="Fermer" aria-label="Fermer">×</button></div>
       <div class="modal-body">
         <label class="field"><span>Minecraft — <b>MS_CLIENT_ID</b> <small>(app Azure, connexion device code)</small></span><input id="setMs" class="in" placeholder="xxxxxxxx-xxxx-xxxx-…" /></label>
         <label class="field"><span>Fortnite — <b>EPIC_CLIENT_ID</b></span><input id="setEpicId" class="in" placeholder="ex. ec684b8c687f479fadea3cb2ad83f5c6" /></label>
@@ -134,13 +162,15 @@
   <!-- Historique -->
   <div id="historyModal" class="modal hidden">
     <div class="modal-box">
-      <div class="modal-head">📜 Historique des snipes <button id="historyClose" class="modal-x" title="Fermer">×</button></div>
+      <div class="modal-head">📜 Historique des snipes <button id="historyClose" class="modal-x" title="Fermer" aria-label="Fermer">×</button></div>
       <div id="historyBody" class="modal-body"></div>
     </div>
   </div>
 
   <!-- Quoi de neuf -->
   <div id="whatsnew" class="toast hidden"></div>
+  <!-- Hôte des toasts non bloquants (remplacent alert()) -->
+  <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>

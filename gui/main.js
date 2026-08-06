@@ -1,6 +1,6 @@
 // Snipe Hub — processus principal Electron. Fenêtre unique + IPC unifié au-dessus des adaptateurs
 // (platforms/* via adapters/*), watchlist commune persistée, capture des logs de snipe, auto-update GitHub.
-import { app, BrowserWindow, ipcMain, shell, clipboard, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, clipboard, Notification, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,14 +24,52 @@ function initDataDirs() {
   process.env.SNIPE_DISCORD_DATA_DIR ||= path.join(ud, 'discord');
 }
 
+// ---------- Géométrie de fenêtre mémorisée (userData/window.json) ----------
+const WIN_FILE = () => path.join(app.getPath('userData'), 'window.json');
+const readWinState = () => { try { return JSON.parse(fs.readFileSync(WIN_FILE(), 'utf8')); } catch { return {}; } };
+// Un écran débranché depuis la dernière session laisserait la fenêtre hors champ.
+function sanePos(st) {
+  if (!Number.isInteger(st.x) || !Number.isInteger(st.y)) return false;
+  return screen.getAllDisplays().some((d) => {
+    const b = d.workArea;
+    return st.x < b.x + b.width - 80 && st.x + (st.width || 0) > b.x + 80 && st.y >= b.y - 10 && st.y < b.y + b.height - 60;
+  });
+}
+function persistWinState() {
+  try {
+    if (!win || win.isDestroyed() || win.isMinimized()) return;
+    const b = win.getNormalBounds();
+    fs.mkdirSync(path.dirname(WIN_FILE()), { recursive: true });
+    fs.writeFileSync(WIN_FILE(), JSON.stringify({ ...b, max: win.isMaximized() }));
+  } catch {}
+}
+let winSaveTimer = null;
+function saveWinState() {   // debounce : pas une écriture disque par pixel de resize
+  if (winSaveTimer) clearTimeout(winSaveTimer);
+  winSaveTimer = setTimeout(() => { winSaveTimer = null; persistWinState(); }, 400);
+}
+
 function createWindow() {
+  const st = readWinState();
+  const ok = sanePos(st);
   win = new BrowserWindow({
-    width: 1060, height: 720, minWidth: 900, minHeight: 600,
+    width: st.width || 1060, height: st.height || 720, minWidth: 900, minHeight: 600,
+    ...(ok ? { x: st.x, y: st.y } : {}),
+    show: false,                                   // pas de fenêtre VIDE pendant le chargement
     backgroundColor: '#080a0f', title: 'Snipe Hub',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false,
+      // Fenêtre minimisée pendant un snipe : sans ça le renderer est throttlé à ~1 Hz et le
+      // journal se fige. Les animations décoratives sont gelées côté CSS (anim-idle).
+      backgroundThrottling: false,
+    },
   });
   win.removeMenu();
+  win.once('ready-to-show', () => { if (st.max) win.maximize(); win.show(); });
+  win.on('resize', saveWinState); win.on('move', saveWinState);
+  win.on('maximize', saveWinState); win.on('unmaximize', saveWinState);
+  win.on('close', () => { if (winSaveTimer) { clearTimeout(winSaveTimer); winSaveTimer = null; } persistWinState(); });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
@@ -144,7 +182,26 @@ ipcMain.handle('pf:accountRemove', (_e, pid, id) => withAdapter(pid, async (a) =
 // patchée à vie (bug de l'ancien save/restore-vers-le-précédent en cas non-LIFO).
 const realConsole = { log: console.log.bind(console), error: console.error.bind(console), warn: console.warn.bind(console) };
 const logStack = [];
-function sendLog(pid, line) { try { win?.webContents.send('log', { pid, line: stripAnsi(line) }); } catch {} }
+// Les moteurs sont TRÈS bavards en burst (spacingMs=30, connections=3 → des dizaines à
+// centaines de lignes/s) et beginCapture patche console.* : un send PAR LIGNE = une
+// sérialisation structured-clone + un saut de processus + un réveil du renderer par ligne,
+// précisément au moment où l'app doit être précise en timing. On agrège par ~frame.
+const LOG_FLUSH_MS = 50, LOG_MAX_BATCH = 400;
+let logBuf = [], logFlushTimer = null;
+function flushLogs() {
+  logFlushTimer = null;
+  if (!logBuf.length) return;
+  const batch = logBuf; logBuf = [];
+  try { if (win && !win.isDestroyed()) win.webContents.send('log', { batch }); } catch {}
+}
+function sendLog(pid, line) {
+  logBuf.push({ pid, line: stripAnsi(line) });
+  if (logBuf.length >= LOG_MAX_BATCH) {           // moteur parti en vrille : on vide tout de suite
+    if (logFlushTimer) clearTimeout(logFlushTimer);
+    flushLogs(); return;
+  }
+  if (!logFlushTimer) logFlushTimer = setTimeout(flushLogs, LOG_FLUSH_MS);
+}
 function forwardLog(line) { const top = logStack[logStack.length - 1]; if (top) sendLog(top.pid, line); }
 function beginCapture(pid) {
   const entry = { pid };
@@ -183,21 +240,27 @@ let stopCurrent = null;   // fonction d'arrêt coopératif du snipe en cours (mo
 // Arrête le snipe en cours (bouton Stop) : le moteur voit son stopFlag et sort → le
 // `await a.snipe` se résout → le finally ci-dessous relâche le verrou `running`.
 ipcMain.handle('pf:stop', () => { try { stopCurrent && stopCurrent(); } catch {} return { ok: true }; });
-ipcMain.handle('pf:snipe', (_e, pid, opts) => withAdapter(pid, async (a) => {
+// ⚠️ Le verrou est pris AVANT tout await. Il était posé DANS le callback de withAdapter,
+// donc après `await getAdapter(pid)` : deux invocations concurrentes arrivées pendant le
+// chargement de l'adaptateur passaient TOUTES LES DEUX le test -> deux snipes simultanés
+// sur le même compte, et le second écrasait stopCurrent (bouton Stop inopérant).
+ipcMain.handle('pf:snipe', (_e, pid, opts) => {
   if (running) return { ok: false, error: 'Un snipe est déjà en cours.' };
   running = true;
-  stopCurrent = () => a.stop?.();
-  const cap = beginCapture(pid);
-  const send = (line) => sendLog(pid, line);
-  try {
-    send(`▶️ Snipe « ${opts.name} » — ${opts.monitor ? 'surveillance' : 'planifié'}…`);
-    const r = await a.snipe(opts);
-    if (r && r.success) notify('🎯 Snipe réussi !', `« ${opts.name} » obtenu sur ${pid}.`);
-    if (!(r && r.stopped)) pushHistory({ platform: pid, name: opts.name, success: !!(r && r.success), at: Date.now() });
-    send('✅ Terminé.'); return { ok: true, result: r };
-  } catch (e) { send('❌ ' + (e?.message || e)); return { ok: false, error: e?.message || String(e) }; }
-  finally { endCapture(cap); running = false; stopCurrent = null; }
-}));
+  return withAdapter(pid, async (a) => {
+    stopCurrent = () => a.stop?.();
+    const cap = beginCapture(pid);
+    const send = (line) => sendLog(pid, line);
+    try {
+      send(`▶️ Snipe « ${opts.name} » — ${opts.monitor ? 'surveillance' : 'planifié'}…`);
+      const r = await a.snipe(opts);
+      if (r && r.success) notify('🎯 Snipe réussi !', `« ${opts.name} » obtenu sur ${pid}.`);
+      if (!(r && r.stopped)) pushHistory({ platform: pid, name: opts.name, success: !!(r && r.success), at: Date.now() });
+      send('✅ Terminé.'); return { ok: true, result: r };
+    } catch (e) { send('❌ ' + (e?.message || e)); return { ok: false, error: e?.message || String(e) }; }
+    finally { endCapture(cap); }
+  }).finally(() => { running = false; stopCurrent = null; });   // libéré même si getAdapter lève
+});
 
 // ---------- IPC : check en masse (avec proxies optionnels) ----------
 ipcMain.handle('pf:bulk', (_e, pid, payload) => withAdapter(pid, async (a) => {
@@ -206,7 +269,16 @@ ipcMain.handle('pf:bulk', (_e, pid, payload) => withAdapter(pid, async (a) => {
   if (!names.length) return { ok: false, error: 'Aucun nom à vérifier.' };
   const proxies = String(payload?.proxies || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const check = await a.bulkChecker();   // peut lever (ex. non connecté) → capté par withAdapter
-  const onProgress = (p) => { try { win?.webContents.send('bulk', { pid, ...p }); } catch {} };
+  // core/bulk.js appelle onProgress après CHAQUE nom : avec 1000 noms, 1000 messages IPC
+  // en quelques secondes alors que le renderer n'écrit qu'un compteur (999 peints puis
+  // aussitôt écrasés). ~10 rafraîchissements/s max, mais TOUJOURS le dernier.
+  let lastEmit = 0;
+  const onProgress = (p) => {
+    const now = Date.now();
+    if (p.done !== p.total && now - lastEmit < 100) return;
+    lastEmit = now;
+    try { if (win && !win.isDestroyed()) win.webContents.send('bulk', { pid, ...p }); } catch {}
+  };
   const results = await runBulk({ names, proxies, check, concurrency: Math.max(1, Math.min(100, +payload?.concurrency || 20)), onProgress });
   return { ok: true, results, free: results.filter((r) => r.free === true).length, total: results.length };
 }));
