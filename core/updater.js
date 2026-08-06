@@ -67,9 +67,14 @@ export async function applyUpdate() {
     quitAndInstall(dest);
     return { ok: true };
   } catch (e) {
-    busy = false;
     send('update-status', { state: 'error', error: e.message });
     return { ok: false, error: e.message };
+  } finally {
+    // Le verrou n'était relâché QUE sur erreur : si la fermeture n'aboutissait pas
+    // (installeur bloqué par l'antivirus, app.quit() empêché), le bouton MàJ répondait
+    // « Mise à jour déjà en cours » jusqu'au redémarrage manuel. Le quit intervient de
+    // toute façon ~400 ms plus tard, donc relâcher ici ne crée pas de double install.
+    busy = false;
   }
 }
 
@@ -116,8 +121,12 @@ function applyAppZip(zipPath, version) {
     "$ErrorActionPreference='SilentlyContinue'\r\n" +
     'Start-Sleep -Seconds 1\r\n' +
     `Expand-Archive -Path '${q(zipPath)}' -DestinationPath '${q(resourcesDir)}' -Force\r\n` +
-    // Aligne la version affichée dans « Applications installées ».
-    `Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnipeMC' -Name DisplayVersion -Value '${q(version || '')}'\r\n` +
+    // Aligne la version affichée dans « Applications installées ». La clé était codée
+    // en dur sur « SnipeMC » (ancien projet) : elle n'existe pas pour Snipe Hub, donc la
+    // version affichée n'était jamais mise à jour. On résout la clé dynamiquement.
+    "$k = Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue | " +
+    "Where-Object { $_.GetValue('DisplayName') -like 'Snipe Hub*' } | Select-Object -First 1\r\n" +
+    `if ($k) { Set-ItemProperty -Path $k.PSPath -Name DisplayVersion -Value '${q(version || '')}' }\r\n` +
     `Start-Process -FilePath '${q(exe)}'\r\n`;
   fs.writeFileSync(ps, script);
   const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps], { detached: true, stdio: 'ignore', windowsHide: true });

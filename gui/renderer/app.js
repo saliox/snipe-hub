@@ -22,7 +22,8 @@ H.onLog((d) => logLine(d.line, d.pid));
 $('logClear').onclick = () => { $('log').textContent = ''; };
 
 // ---------- Version + MàJ ----------
-(async () => { try { $('version').textContent = 'v' + (await H.version()); } catch {} })();
+async function showVersion() { try { $('version').textContent = 'v' + (await H.version()); } catch {} }
+showVersion();
 $('updateBtn').onclick = async () => {
   logLine('⟳ Vérification des mises à jour…');
   const r = await H.updateCheck();
@@ -38,10 +39,13 @@ $('updateBtn').onclick = async () => {
 // Progression / statut poussés par le processus principal pendant le téléchargement.
 H.onUpdate && H.onUpdate((d) => {
   if (!d) return;
-  if (d.state === 'available') logLine(`🆕 Version ${d.version} disponible (bouton « MàJ » pour installer).`);
+  if (d.state === 'available') { logLine(`🆕 Version ${d.version} disponible (bouton « MàJ » pour installer).`); showVersion(); }
   else if (d.state === 'downloading') logLine('⬇️ Téléchargement de la mise à jour…');
   else if (d.state === 'installing') logLine('⚙️ Installation… l\'application va redémarrer.');
-  else if (d.state === 'error') logLine('❌ MàJ : ' + d.error);
+  // États TERMINAUX sans installation : la pastille affichait « MàJ 73% » à vie
+  // (le libellé n'était jamais restauré) — on remet la version courante.
+  else if (d.state === 'error') { logLine('❌ MàJ : ' + d.error); showVersion(); }
+  else if (d.state === 'uptodate') showVersion();
 });
 H.onUpdateProgress && H.onUpdateProgress((p) => { if (p && p.pct != null) $('version').textContent = `MàJ ${p.pct}%`; });
 
@@ -75,11 +79,21 @@ async function refreshDots() {
   }
 }
 
+// Compteur de séquence : en cliquant vite sur deux plateformes, la réponse la PLUS
+// LENTE arrivait en dernier et repeignait l'écran avec les champs de la mauvaise
+// plateforme (ex. le champ mot de passe Roblox masqué alors que Roblox est actif).
+let selSeq = 0;
+
 async function selectPlatform(pid) {
-  current = pid;
+  const seq = ++selSeq;
   [...document.querySelectorAll('.pf-item')].forEach((e) => e.classList.toggle('active', e.dataset.pid === pid));
   const r = await H.info(pid);
-  if (!r.ok) { logLine('❌ ' + r.error); return; }
+  if (seq !== selSeq) return;   // un autre clic a pris la main : réponse périmée, on l'ignore
+  // On n'engage `current` qu'APRÈS le succès : sinon un adaptateur qui refuse de se
+  // charger laissait `current` sur la plateforme cassée avec un `info` périmé, et le
+  // bouton Connexion mourait en silence (il lisait le loginKind de la précédente).
+  if (!r.ok) { logLine('❌ ' + r.error); current = null; info = null; return; }
+  current = pid;
   info = r;
   $('pfEmoji').textContent = r.emoji;
   $('pfLabel').textContent = r.soon ? r.label + ' — bientôt' : r.label;
@@ -116,6 +130,7 @@ async function selectPlatform(pid) {
     : kind === 'cookie' ? 'colle ton cookie .ROBLOSECURITY…' : '';
   $('loginBtn').textContent = kind === 'device' ? 'Connexion (device code)' : 'Enregistrer';
   $('bulkCard').classList.toggle('hidden', !r.bulk);
+  if (seq !== selSeq) return;   // encore un clic entre-temps : ne pas repeindre le compte
   refreshAccount();
   renderAccounts(pid);
 }
@@ -158,7 +173,10 @@ $('loginBtn').onclick = async () => {
   if (!current || soonMode) return;
   const kind = info.loginKind;
   if ((kind === 'token' || kind === 'code' || kind === 'cookie') && !$('loginArg').value.trim()) {
-    return alert(kind === 'token' ? 'Colle ton token Discord.' : kind === 'cookie' ? 'Colle ton cookie .ROBLOSECURITY.' : 'Colle ton authorizationCode Epic.');
+    // Le message était codé en dur sur Discord : sur Twitch ou X, l'utilisateur lisait
+    // « Colle ton token Discord. » alors que le placeholder disait autre chose.
+    // On s'aligne sur le placeholder, déjà calculé par plateforme.
+    return alert('Renseigne le champ : ' + ($('loginArg').placeholder || 'identifiant requis'));
   }
   const btn = $('loginBtn'); const label = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Connexion…';

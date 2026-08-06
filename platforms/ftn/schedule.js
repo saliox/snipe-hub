@@ -76,13 +76,17 @@ function writeCmd(item) {
   const cmdPath = path.join(schedDir(), `${item.id}.cmd`);
   const logPath = path.join(schedDir(), `${item.id}.log`);
   const node = process.execPath;
-  const script = path.join(ROOT, 'src', 'index.js');
+  // Le moteur vient du CLI autonome snipe-ftn, où le point d'entrée était src/index.js.
+  // Ici il vit dans platforms/ftn/ : le .cmd généré pointait donc vers un fichier
+  // inexistant et la tâche planifiée mourait aussitôt sur « Cannot find module ».
+  const script = path.join(__dirname, 'index.js');
+  if (!fs.existsSync(script)) throw new Error(`Point d'entrée introuvable : ${script}`);
   const iso = new Date(item.dropAt).toISOString();
   const args = ['snipe', item.name, '--at', iso, ...flagsFromOpts(item.opts)]
     .map((s) => `"${String(s).replace(/"/g, '')}"`).join(' ');
   const body =
     '@echo off\r\n' +
-    `cd /d "${ROOT}"\r\n` +
+    `cd /d "${path.resolve(__dirname, '..', '..')}"\r\n` +   // racine du hub, pas platforms/
     `"${node}" "${script}" ${args} >> "${logPath}" 2>&1\r\n`;
   fs.writeFileSync(cmdPath, body);
   return cmdPath;

@@ -236,18 +236,26 @@ async function sweepWatchlist() {
   watchBusy = true;
   try {
     for (const it of readWatch()) {
-      const key = it.platform + ':' + String(it.name).toLowerCase();
-      let a; try { a = await getAdapter(it.platform); } catch { continue; }
-      if (!a || !a.check) continue;
-      let r; try { r = await a.check(it.name); } catch { continue; } // pas connecté / erreur → on saute
-      if (r && r.free) {
-        if (!notifiedFree.has(key)) {
-          notifiedFree.add(key);
-          notify('🔔 Nom libre !', `« ${it.name} » est libre sur ${it.platform}.`);
-          try { win?.webContents.send('watch-free', { platform: it.platform, name: it.name }); } catch {}
-        }
-      } else if (r) { notifiedFree.delete(key); } // repris → re-notifiable s'il se relibère
-      await sleep(500); // espacement anti rate-limit entre les sondes
+      // try/finally : chaque `continue` sautait l'espacement de 500 ms placé en fin de
+      // boucle. Une liste dont les sondes échouent (non connecté, rate-limit — que
+      // check() signale désormais en levant) était donc parcourue à pleine vitesse,
+      // ce qui aggrave précisément le rate-limit qu'on veut éviter. Le `finally`
+      // garantit l'espacement quel que soit le chemin de sortie de l'itération.
+      try {
+        const key = it.platform + ':' + String(it.name).toLowerCase();
+        let a; try { a = await getAdapter(it.platform); } catch { continue; }
+        if (!a || !a.check) continue;
+        let r; try { r = await a.check(it.name); } catch { continue; } // pas connecté / erreur → on saute
+        if (r && r.free) {
+          if (!notifiedFree.has(key)) {
+            notifiedFree.add(key);
+            notify('🔔 Nom libre !', `« ${it.name} » est libre sur ${it.platform}.`);
+            try { win?.webContents.send('watch-free', { platform: it.platform, name: it.name }); } catch {}
+          }
+        } else if (r) { notifiedFree.delete(key); } // repris → re-notifiable s'il se relibère
+      } finally {
+        await sleep(500); // espacement anti rate-limit entre les sondes (toujours appliqué)
+      }
     }
   } finally { watchBusy = false; }
 }

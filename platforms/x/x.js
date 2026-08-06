@@ -30,7 +30,13 @@ export async function checkAvailable(name, cred = null, dispatcher = null) {
   }
   if (statusCode !== 200 || !data) return { free: null, status: statusCode, message: txt.slice(0, 120) };
   // { valid:true } => libre ; { valid:false, reason:'taken'|... } => pris/invalide.
-  return { free: data.valid === true, reason: data.reason, message: data.msg || '' };
+  // Un 200 SANS champ `valid` booléen (charge d'erreur { errors:[...] } ou schéma changé
+  // — très plausible vu la volatilité des endpoints X) était conclu « pris » de façon
+  // catégorique. On le rapporte désormais comme INDÉTERMINÉ.
+  if (typeof data.valid !== 'boolean') {
+    return { free: null, status: 200, message: `réponse inattendue : ${txt.slice(0, 120)}` };
+  }
+  return { free: data.valid === true, status: 200, reason: data.reason, message: data.msg || '' };
 }
 
 // Change le @handle du compte connecté. ⚠️ endpoint à CONFIRMER (voir en-tête).
