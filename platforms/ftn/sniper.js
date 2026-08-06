@@ -10,9 +10,20 @@ import { alertFreeName } from './alerts.js';
 
 const HOST = 'https://account-public-service-prod.ol.epicgames.com';
 
-// Arrêt coopératif (utilisé par une UI pour stopper le mode surveillance).
+// Arrêt coopératif (utilisé par une UI pour stopper le mode surveillance ET le planifié).
 let stopFlag = false;
 export function requestStop() { stopFlag = true; }
+
+// Attente jusqu'à `target`, mais RÉACTIVE à l'arrêt : paliers de 200 ms tant qu'il reste
+// du temps, puis sleepUntil pour la précision finale. Sans ça, un snipe planifié dort d'un
+// bloc : le bouton Arrêter ne fait rien ET le verrou global `running` de gui/main.js reste
+// pris (plus aucun snipe possible, toutes plateformes confondues).
+async function waitUntilOrStop(target) {
+  while (!stopFlag && Date.now() < target - 200) {
+    await sleep(Math.min(200, target - Date.now()));
+  }
+  if (!stopFlag && Date.now() < target) await sleepUntil(target, 20);
+}
 
 // Cloche terminal : alerte sonore quand le nom se libère (utile en monitor).
 function bell() { try { process.stdout.write('\x07'); } catch {} }
@@ -98,6 +109,7 @@ export async function snipe(opts) {
     name, token, accountId, dropAt, monitor = false,
     connections = 3, burst = 6, volley = 3, spacingMs = 30, leadMs = 40, pollMs = 1000,
     proxies = null, diag = false, skipNtp = false, onFree = null, displayName = null,
+    getToken = null,   // async () => string : renouvelle l'access token sur 401 (surveillance longue)
   } = opts;
 
   stopFlag = false;
@@ -128,7 +140,7 @@ export async function snipe(opts) {
 
     if (monitor) {
       const r = await monitorLoop(pool, name, token, accountId,
-        { burst, volley, spacingMs, pollMs, dropAt, diag, metrics, pollDispatchers, getOffset: () => offset, onFree, displayName });
+        { burst, volley, spacingMs, pollMs, dropAt, diag, metrics, pollDispatchers, getOffset: () => offset, onFree, displayName, getToken });
       logSummary(metrics, offset, diag);
       return r;
     }
@@ -142,7 +154,8 @@ export async function snipe(opts) {
     // Pré-chauffage ~10s avant le drop pour avoir des sockets frais.
     const warmAtLocal = toLocal(dropAt - 10_000);
     const longWait = (warmAtLocal - Date.now()) > 60_000;
-    if (warmAtLocal > Date.now()) await sleepUntil(warmAtLocal);
+    if (warmAtLocal > Date.now()) await waitUntilOrStop(warmAtLocal);
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true, attempts: [] }; }
 
     // Ré-sync NTP juste avant le tir si on a attendu longtemps (l'horloge dérive).
     if (!skipNtp && longWait) { log.step('Ré-synchronisation NTP (avant tir)'); await syncNtp('Horloge'); }
@@ -155,7 +168,8 @@ export async function snipe(opts) {
     const firstLocal = toLocal(dropAt - leadMs);
     log.info(`Rafale : volée de ${Math.min(volley, burst)} à T0-${leadMs} ms` +
       (burst > volley ? ` + ${burst - volley} relance(s) /${spacingMs} ms` : '') + '. En attente...');
-    await sleepUntil(firstLocal, 20);
+    await waitUntilOrStop(firstLocal);
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true, attempts: [] }; }
 
     const result = await fireBurst(pool, name, token, accountId, { burst, volley, spacingMs }, metrics);
     reportResult(result, name);
@@ -202,9 +216,12 @@ async function fireBurst(pool, name, token, accountId, { burst, volley, spacingM
 // passe libre. C'est le mode principal côté Epic (pas d'horaire de drop public).
 // Cadence adaptative : lente loin d'un drop connu, rapide dans la fenêtre du drop.
 async function monitorLoop(pool, name, token, accountId, opts) {
-  const { burst, volley, spacingMs, pollMs, dropAt, diag, metrics, pollDispatchers, getOffset, onFree, displayName } = opts;
+  const { burst, volley, spacingMs, pollMs, dropAt, diag, metrics, pollDispatchers, getOffset, onFree, displayName, getToken } = opts;
   log.step(`Surveillance de ${c.yellow}${name}${c.reset} (Ctrl+C pour arrêter)`);
-  await warmup(pool, token, 2);
+  // Jeton MUTABLE : une surveillance dure des heures alors qu'un access token Epic
+  // vaut ~1 h (et la marge de 60 s d'accounts.js peut le rendre presque mort d'emblée).
+  let tok = token;
+  await warmup(pool, tok, 2);
 
   const dispatchers = pollDispatchers.length ? pollDispatchers : [pool];
   let di = 0;
@@ -212,14 +229,40 @@ async function monitorLoop(pool, name, token, accountId, opts) {
   while (!stopFlag) {
     metrics.polls++;
     const disp = dispatchers[di++ % dispatchers.length];
-    const st = await displayNameStatus(name, token, disp);
+    // La sonde doit survivre aux coupures réseau : sans try/catch, un ECONNRESET ou un
+    // dépassement des 8 s de headersTimeout tuait définitivement la surveillance.
+    let st;
+    try { st = await displayNameStatus(name, tok, disp); }
+    catch (e) { log.warn(`sonde ${name} : ${e.message} — nouvelle tentative dans 2 s.`); await sleep(2000); continue; }
+
+    // Jeton expiré : SANS ce traitement, le 401 retombait dans la voie « nom pris » et la
+    // surveillance tournait aveugle à l'infini sans jamais rien signaler.
+    if (st.statusCode === 401) {
+      log.warn('401 sur la sonde — jeton Epic expiré, tentative de rafraîchissement...');
+      let fresh = null;
+      if (getToken) { try { fresh = await getToken(); } catch (e) { log.err(`Rafraîchissement impossible : ${e.message}`); } }
+      if (!fresh) {
+        log.err('Jeton Epic expiré — reconnecte le compte.');
+        return { success: false, error: 'token-expired', attempts: [] };
+      }
+      tok = fresh;
+      await warmup(pool, tok, 1);
+      log.ok('Jeton Epic rafraîchi — reprise de la surveillance.');
+      continue;
+    }
+    // Tout autre statut indéterminé (403, 5xx…) : on le DIT au lieu de le confondre avec « pris ».
+    if (st.free == null && !st.rateLimited) {
+      log.warn(`sonde indéterminée (statut ${st.statusCode}) — nouvelle tentative.`);
+      await sleep(Math.max(2000, pollMs));
+      continue;
+    }
 
     if (st.free === true) {
       const detectedAt = Date.now();
       bell();
       log.ok(`${c.green}${name} est LIBRE — rafale !${c.reset}`);
       if (onFree) { try { onFree(name); } catch { /* ignore */ } }
-      const result = await fireBurst(pool, name, token, accountId, { burst, volley, spacingMs }, metrics);
+      const result = await fireBurst(pool, name, tok, accountId, { burst, volley, spacingMs }, metrics);
       if (result.attempts[0]) log.info(`Latence détection→1er tir : ${Date.now() - detectedAt} ms`);
       alertFreeName(name, { claimed: result.success, account: displayName }).catch(() => {});
       reportResult(result, name);

@@ -10,6 +10,16 @@ import { checkAvailable, changeUsername } from './twitch.js';
 let stopFlag = false;
 export function requestStop() { stopFlag = true; }
 
+// Attente RÉACTIVE à l'arrêt (paliers de 200 ms) : sans elle, un snipe planifié dort d'un
+// bloc, le bouton Arrêter est inopérant et le verrou global `running` de gui/main.js reste
+// pris — ce qui bloque TOUTES les plateformes jusqu'à l'heure du drop.
+async function waitUntilOrStop(target) {
+  while (!stopFlag && Date.now() < target - 200) {
+    await sleep(Math.min(200, target - Date.now()));
+  }
+  if (!stopFlag && Date.now() < target) await sleepUntil(target, 20);
+}
+
 async function grabWhenFree(name, session, { pollMs }) {
   const MAX_TAKEN = 5;
   let takenLosses = 0, polls = 0;
@@ -19,9 +29,24 @@ async function grabWhenFree(name, session, { pollMs }) {
     catch (e) { log.warn(`sonde: ${e.message}`); await sleep(pollMs); continue; }
     polls++;
     if (r.rateLimited) { const w = (r.retryAfter || 2) * 1000; log.warn(`429 sur la sonde — pause ${Math.round(w / 1000)}s.`); await sleep(w); continue; }
+    // Statut INDÉTERMINÉ : un jeton expiré (401) ou un refus Helix (400/403) tombait
+    // dans la voie « pris » → surveillance aveugle et muette à l'infini.
+    if (r.free == null) {
+      if (r.status === 401 || r.status === 403) {
+        log.err('Jeton Twitch invalide ou expiré — reconnecte-toi.');
+        return { success: false, fatal: true, message: 'Jeton Twitch invalide/expiré.' };
+      }
+      log.warn(`sonde indéterminée (statut ${r.status}) : ${r.message || ''} — nouvelle tentative.`);
+      await sleep(Math.max(2000, pollMs));
+      continue;
+    }
     if (r.free) {
       log.ok(`🔔 « ${name} » est LIBRE sur Twitch — tentative de prise !`);
-      const res = await changeUsername(name, session);
+      // Une coupure réseau PENDANT la prise ne doit pas annuler toute la surveillance :
+      // on compte l'échec et on réessaie (MAX_TAKEN tentatives restent disponibles).
+      let res;
+      try { res = await changeUsername(name, session); }
+      catch (e) { res = { ok: false, status: 0, message: `réseau : ${e.message}` }; }
       if (res.ok) { log.ok(`🎯 Login « ${name} » OBTENU !`); return { success: true }; }
       // Le renommage a échoué (mutation à confirmer, cooldown, ou pris plus vite) :
       // on ALERTE clairement — la fenêtre de disponibilité, elle, a bien été détectée.
@@ -64,7 +89,8 @@ export async function snipe(opts) {
     log.step(`Snipe planifié de « ${name} » (Twitch)`);
     log.info(`Drop dans ${fmtDuration(dropAt - now)} (${new Date(dropAt).toISOString()}).`);
     const fireLocal = (dropAt - leadMs) - offset;
-    if (fireLocal > Date.now()) await sleepUntil(fireLocal, 20);
+    if (fireLocal > Date.now()) await waitUntilOrStop(fireLocal);
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true }; }
   } else {
     log.step(`Surveillance de « ${name} » (Twitch, prise dès que libre)`);
   }

@@ -9,6 +9,16 @@ import { checkAvailable, changeUsername } from './x.js';
 let stopFlag = false;
 export function requestStop() { stopFlag = true; }
 
+// Attente RÉACTIVE à l'arrêt (paliers de 200 ms) : sans elle, un snipe planifié dort d'un
+// bloc, le bouton Arrêter est inopérant et le verrou global `running` de gui/main.js reste
+// pris — ce qui bloque TOUTES les plateformes jusqu'à l'heure du drop.
+async function waitUntilOrStop(target) {
+  while (!stopFlag && Date.now() < target - 200) {
+    await sleep(Math.min(200, target - Date.now()));
+  }
+  if (!stopFlag && Date.now() < target) await sleepUntil(target, 20);
+}
+
 async function grabWhenFree(name, session, { pollMs }) {
   const MAX_TAKEN = 5;
   let takenLosses = 0, polls = 0;
@@ -18,9 +28,24 @@ async function grabWhenFree(name, session, { pollMs }) {
     catch (e) { log.warn(`sonde: ${e.message}`); await sleep(pollMs); continue; }
     polls++;
     if (r.rateLimited) { const w = (r.retryAfter || 2) * 1000; log.warn(`429 sur la sonde — pause ${Math.round(w / 1000)}s.`); await sleep(w); continue; }
+    // Statut INDÉTERMINÉ : des cookies expirés (401/403) — très probable vu le
+    // verrouillage de l'API X — tombaient dans la voie « pris » → surveillance
+    // aveugle et muette à l'infini.
+    if (r.free == null) {
+      if (r.status === 401 || r.status === 403) {
+        log.err('Identifiants X invalides ou expirés (auth_token / ct0) — reconnecte-toi.');
+        return { success: false, fatal: true, message: 'Identifiants X invalides/expirés.' };
+      }
+      log.warn(`sonde indéterminée (statut ${r.status}) : ${r.message || ''} — nouvelle tentative.`);
+      await sleep(Math.max(2000, pollMs));
+      continue;
+    }
     if (r.free) {
       log.ok(`🔔 « @${name} » est LIBRE sur X — tentative de prise !`);
-      const res = await changeUsername(name, session);
+      // Une coupure réseau PENDANT la prise ne doit pas annuler toute la surveillance.
+      let res;
+      try { res = await changeUsername(name, session); }
+      catch (e) { res = { ok: false, status: 0, message: `réseau : ${e.message}` }; }
       if (res.ok) { log.ok(`🎯 @handle « @${name} » OBTENU !`); return { success: true }; }
       log.err(`Prise échouée : ${res.message || 'statut ' + res.status}.`);
       takenLosses++;
@@ -61,7 +86,8 @@ export async function snipe(opts) {
     log.step(`Snipe planifié de « @${name} » (X)`);
     log.info(`Drop dans ${fmtDuration(dropAt - now)} (${new Date(dropAt).toISOString()}).`);
     const fireLocal = (dropAt - leadMs) - offset;
-    if (fireLocal > Date.now()) await sleepUntil(fireLocal, 20);
+    if (fireLocal > Date.now()) await waitUntilOrStop(fireLocal);
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true }; }
   } else {
     log.step(`Surveillance de « @${name} » (X, prise dès que libre)`);
   }

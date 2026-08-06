@@ -13,10 +13,27 @@ let stopFlag = false;
 export function requestStop() { stopFlag = true; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+// Attente jusqu'à `target`, mais RÉACTIVE à l'arrêt : on dort par paliers de 200 ms
+// tant qu'il reste du temps, puis on finit avec sleepUntil pour la précision. Sans ça,
+// un snipe planifié dort d'un bloc : le bouton Arrêter ne fait rien ET le verrou global
+// `running` de gui/main.js reste pris (plus aucun snipe possible, toutes plateformes).
+async function waitUntilOrStop(target) {
+  while (!stopFlag && Date.now() < target - 200) {
+    await sleep(Math.min(200, target - Date.now()));
+  }
+  if (!stopFlag && Date.now() < target) await sleepUntil(target, 20);
+}
+
 // Tente le changement, en série. Gère la rotation du jeton CSRF (403) et le 429.
 async function fireChange(name, session) {
   for (let i = 0; i < session.maxTries && !stopFlag; i++) {
-    const r = await changeUsername(name, session);
+    // Le POST doit survivre à une coupure réseau : sans ce try/catch, un ECONNRESET
+    // AU MOMENT DE LA PRISE faisait avorter tout le snipe alors qu'il restait des
+    // tentatives. Le `continue` préserve la règle « en série, arrêt au 1er succès »
+    // (donc aucun risque de double débit de 1000 Robux).
+    let r;
+    try { r = await changeUsername(name, session); }
+    catch (e) { log.warn(`tentative #${i + 1} : ${e.message} — nouvelle tentative.`); await sleep(300); continue; }
     if (r.ok) { log.ok(`🎯 Pseudo « ${name} » OBTENU (tentative #${i + 1}) — 1000 Robux débités.`); return { success: true, index: i + 1 }; }
     if (r.status === 403 && r.newCsrf) { session.csrf = r.newCsrf; log.warn('Jeton CSRF renouvelé — nouvelle tentative.'); continue; }
     if (r.status === 429) { log.warn('429 (rate-limit) — pause 800 ms.'); await sleep(800); continue; }
@@ -40,6 +57,17 @@ async function grabWhenFree(name, session, { pollMs }) {
     catch (e) { log.warn(`sonde: ${e.message}`); await sleep(pollMs); continue; }
     polls++;
     if (r.rateLimited) { const w = (r.retryAfter || 2) * 1000; log.warn(`429 sur la sonde — pause ${Math.round(w / 1000)}s.`); await sleep(w); continue; }
+    // Statut INDÉTERMINÉ (free == null) : sans ce garde-fou, un cookie expiré (401/403)
+    // retombait dans la voie « toujours pris » et la surveillance tournait à l'infini,
+    // muette, sans jamais prendre le pseudo ni signaler quoi que ce soit.
+    if (r.free == null) {
+      if (r.status === 401 || r.status === 403) {
+        return { success: false, fatal: true, message: 'Cookie .ROBLOSECURITY invalide ou expiré — reconnecte-toi.' };
+      }
+      log.warn(`sonde indéterminée (statut ${r.status}) — nouvelle tentative.`);
+      await sleep(pollMs);
+      continue;
+    }
     if (r.free) {
       log.ok(`« ${name} » est LIBRE — tentative de prise !`);
       try { session.csrf = await fetchCsrf(session.cookie); } catch (e) { log.warn(`CSRF: ${e.message}`); }
@@ -91,7 +119,8 @@ export async function snipe(opts) {
     log.step(`Snipe planifié de « ${name} »`);
     log.info(`Drop dans ${fmtDuration(dropAt - now)} (${new Date(dropAt).toISOString()}).`);
     const fireLocal = (dropAt - leadMs) - offset;
-    if (fireLocal > Date.now()) await sleepUntil(fireLocal, 20);
+    if (fireLocal > Date.now()) await waitUntilOrStop(fireLocal);
+    if (stopFlag) { log.warn('Snipe planifié annulé.'); return { success: false, stopped: true }; }
   } else {
     log.step(`Surveillance de « ${name} » (prise dès que libre)`);
   }

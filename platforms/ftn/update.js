@@ -43,9 +43,22 @@ export async function checkForUpdates() {
   return { available: isNewer(info.version, current), current, version: info.version, notes: info.notes || '', info };
 }
 
+/**
+ * ⚠️ NEUTRALISÉ DANS LE HUB. Ce module vient du CLI autonome snipe-ftn, où ROOT
+ * désignait la racine du projet. Ici, ROOT vaut `platforms/` : décompresser la
+ * release snipe-ftn par-dessus ÉCRASERAIT mc/, discord/, roblox/, twitch/ et x/.
+ * De plus la version locale y est vue comme 0.0.0, donc le CLI annonçait une mise
+ * à jour en permanence — invitant l'utilisateur à déclencher exactement ça.
+ *
+ * Le hub a son propre updater (core/updater.js, IPC update:check / update:apply),
+ * qui met à jour l'application entière. On coupe donc les deux points d'entrée.
+ */
+const DISABLED_IN_HUB = true;
+
 // Vérification discrète, au plus une fois par 24 h, non bloquante en cas d'échec.
 // Affiche un simple avis si une nouvelle version existe. Retourne true si avis affiché.
 export async function maybeNotify(maxAgeMs = 24 * 3600 * 1000) {
+  if (DISABLED_IN_HUB) return false;   // le hub gère ses MAJ lui-même
   try {
     const f = stampFile();
     let last = 0;
@@ -77,6 +90,11 @@ export async function maybeNotify(maxAgeMs = 24 * 3600 * 1000) {
 
 // Vérifie puis, si dispo (ou si force), télécharge et applique la mise à jour.
 export async function runUpdate({ check = false } = {}) {
+  if (DISABLED_IN_HUB) {
+    log.warn('Mise à jour du moteur désactivée : Snipe Hub se met à jour globalement.');
+    log.info('Utilise le bouton « MàJ » de l\'application (ou npm run publish:update côté dev).');
+    return false;
+  }
   log.step('Recherche de mise à jour');
   const src = source();
   log.info(`Source : ${src.kind === 'http' ? src.base : 'github:' + src.repo}`);

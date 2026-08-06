@@ -70,6 +70,9 @@ export default {
     return snipe({
       name: o.name,
       token: accessToken,
+      // Une surveillance dure des heures alors qu'un access token Epic vaut ~1 h :
+      // le moteur doit pouvoir le renouveler lui-même sur 401.
+      getToken: async () => (await accounts.getValidToken()).accessToken,
       accountId: accountId || acc?.accountId || acc?.id,
       dropAt: o.dropAt, monitor: o.monitor,
       connections: o.connections, burst: o.burst, spacingMs: o.spacingMs, leadMs: o.leadMs, skipNtp: o.skipNtp,

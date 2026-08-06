@@ -30,7 +30,13 @@ export async function checkAvailable(name, token = null, dispatcher = null) {
   const txt = await body.text().catch(() => '');
   let data = null; try { data = txt ? JSON.parse(txt) : null; } catch { /* */ }
   if (statusCode === 429) {
-    const ra = headers['ratelimit-reset'] ? Number(headers['ratelimit-reset']) : null;
+    // ⚠️ Ratelimit-Reset de Helix est un TIMESTAMP epoch (secondes), pas un délai.
+    // Le passer tel quel donnait une pause de ~56 ans : Node refuse un setTimeout
+    // > 2^31 ms et le ramène à 1 ms → la sonde repartait aussitôt et martelait l'API.
+    const resetEpoch = Number(headers['ratelimit-reset']);
+    const ra = Number.isFinite(resetEpoch) && resetEpoch > 0
+      ? Math.max(1, Math.min(60, Math.ceil(resetEpoch - Date.now() / 1000)))
+      : null;
     return { free: null, rateLimited: true, retryAfter: ra, status: 429 };
   }
   if (statusCode !== 200) return { free: null, status: statusCode, message: txt.slice(0, 120) };
@@ -59,7 +65,12 @@ export async function changeUsername(name, { token }) {
     const opErr = data?.data?.updateUser?.error?.code || null;
     if (gqlErr) return { ok: false, status: 200, message: `GQL: ${gqlErr} (mutation à confirmer)` };
     if (opErr) return { ok: false, status: 200, message: `Refus Twitch: ${opErr}` };
-    if (data?.data?.updateUser?.user?.login) return { ok: true, status: 200 };
+    // On n'annonce un succès QUE si le login renvoyé est bien celui demandé. Sinon on
+    // déclarait « OBTENU » (+ notification bureau + historique success:true) alors que
+    // le compte n'avait pas été renommé : faux succès, l'utilisateur arrêtait de surveiller.
+    const got = data?.data?.updateUser?.user?.login;
+    if (got && String(got).toLowerCase() === String(name).toLowerCase()) return { ok: true, status: 200 };
+    if (got) return { ok: false, status: 200, message: `Twitch a renvoyé « ${got} » au lieu de « ${name} » — renommage NON effectué.` };
     return { ok: false, status: 200, message: 'Réponse GQL inattendue (mutation à confirmer).' };
   }
   return { ok: false, status: statusCode, message: txt.slice(0, 160) };
