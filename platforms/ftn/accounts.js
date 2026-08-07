@@ -124,19 +124,63 @@ export function setActive(id) {
   return listAccounts();
 }
 
+// Refresh EN VOL par compte. Epic invalide un refresh token dès qu'il est consommé :
+// deux rafraîchissements concurrents sur le même compte échangent le MÊME token, le
+// second reçoit un refus, et le compte devient irrécupérable (reconnexion manuelle).
+// Le cas arrivait facilement : le balayage de watchlist, un check et un snipe peuvent
+// appeler getValidToken() en même temps, et chacun relit le store depuis le disque.
+const refreshInFlight = new Map(); // accountId (interne) -> Promise en cours
+
+/**
+ * Déduplique les opérations concurrentes portant la même clé : le premier appelant
+ * lance le travail, les suivants attendent le MÊME résultat. Exporté pour les tests.
+ * @internal
+ */
+export function _dedupe(key, fn) {
+  const pending = refreshInFlight.get(key);
+  if (pending) return pending;
+  const p = Promise.resolve()
+    .then(fn)
+    .finally(() => { refreshInFlight.delete(key); });
+  refreshInFlight.set(key, p);
+  return p;
+}
+
+// Écrit les champs de jeton d'UN compte sans écraser le reste du store.
+// saveStore(store) réécrivait un instantané chargé AVANT le refresh : toute
+// modification concurrente (ajout de compte, changement d'actif) était perdue.
+function persistAccount(acc) {
+  const fresh = loadStore();
+  const i = fresh.accounts.findIndex((a) => a.id === acc.id);
+  if (i >= 0) {
+    fresh.accounts[i] = {
+      ...fresh.accounts[i],
+      accessToken: acc.accessToken,
+      expiresAt: acc.expiresAt,
+      refreshToken: acc.refreshToken,
+      displayName: acc.displayName,
+    };
+  } else {
+    fresh.accounts.push(acc);
+  }
+  saveStore(fresh);
+}
+
 // Rafraîchit (si nécessaire) et renvoie un access token frais pour un compte.
 async function freshFor(store, acc) {
   if (acc.accessToken && acc.expiresAt && Date.now() < acc.expiresAt) {
     return { accessToken: acc.accessToken, accountId: acc.accountId, displayName: acc.displayName };
   }
   if (!acc.refreshToken) throw new Error(`Compte "${acc.label}" : refresh indisponible, reconnecte-le.`);
-  const info = cacheFromToken(await refreshTokens(acc.refreshToken));
-  acc.accessToken = info.accessToken;
-  acc.expiresAt = info.expiresAt;
-  if (info.refreshToken) acc.refreshToken = info.refreshToken;
-  if (info.displayName) acc.displayName = info.displayName;
-  saveStore(store);
-  return { accessToken: acc.accessToken, accountId: acc.accountId, displayName: acc.displayName };
+  return _dedupe(acc.id, async () => {
+    const info = cacheFromToken(await refreshTokens(acc.refreshToken));
+    acc.accessToken = info.accessToken;
+    acc.expiresAt = info.expiresAt;
+    if (info.refreshToken) acc.refreshToken = info.refreshToken;
+    if (info.displayName) acc.displayName = info.displayName;
+    persistAccount(acc);
+    return { accessToken: acc.accessToken, accountId: acc.accountId, displayName: acc.displayName };
+  });
 }
 
 // Token frais du compte ACTIF (compat getValidToken de l'ancienne auth.js).
