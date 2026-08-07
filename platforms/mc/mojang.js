@@ -43,6 +43,10 @@ export async function nameStatus(name, accessToken) {
 }
 
 // Vérifie que le nom respecte les règles Minecraft (3-16 car., [A-Za-z0-9_]).
+// String(name || '') est OBLIGATOIRE : .test() coerce son argument, donc `null`
+// devenait la chaîne 'null' — 4 caractères alphanumériques, donc ACCEPTÉE — et
+// `undefined` la chaîne 'undefined'. Le nom invalide partait alors vers l'API et
+// l'appel était perdu. Les moteurs roblox/twitch/x avaient déjà ce garde.
 export function validName(name) {
-  return /^[A-Za-z0-9_]{3,16}$/.test(name);
+  return /^[A-Za-z0-9_]{3,16}$/.test(String(name || ''));
 }
