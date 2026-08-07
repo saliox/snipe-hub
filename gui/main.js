@@ -74,10 +74,30 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 
+// Écriture JSON ATOMIQUE. Écrire directement sur le fichier final laissait un JSON
+// TRONQUÉ si le process mourait pendant l'écriture (crash, extinction, antivirus) —
+// et readX() traite un JSON invalide en `catch -> valeur vide`, donc la watchlist ou
+// l'historique disparaissaient SILENCIEUSEMENT. rename() est atomique (NTFS et POSIX).
+// Renvoie true/false : les appelants IPC peuvent enfin dire la vérité au renderer
+// au lieu de répondre « ok » alors que rien n'a été persisté.
+function writeJsonAtomic(file, value) {
+  const tmp = file + '.tmp';
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+    fs.renameSync(tmp, file);
+    return true;
+  } catch (e) {
+    console.error(`[persist] échec d'écriture ${path.basename(file)} : ${e.message}`);
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+    return false;
+  }
+}
+
 // ---------- Watchlist unifiée (userData/watchlist.json) : { platform, name, guildId?, addedAt } ----------
 const WATCH_FILE = () => path.join(app.getPath('userData'), 'watchlist.json');
 const readWatch = () => { try { return JSON.parse(fs.readFileSync(WATCH_FILE(), 'utf8')); } catch { return []; } };
-const writeWatch = (arr) => { try { fs.mkdirSync(path.dirname(WATCH_FILE()), { recursive: true }); fs.writeFileSync(WATCH_FILE(), JSON.stringify(arr, null, 2)); } catch {} };
+const writeWatch = (arr) => writeJsonAtomic(WATCH_FILE(), arr);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -94,24 +114,29 @@ function notify(title, body) {
 // ---------- Réglages (creds + proxies) persistés (userData/settings.json) ----------
 const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'settings.json');
 const readSettings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8')); } catch { return {}; } };
-const writeSettings = (s) => { try { fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true }); fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(s, null, 2)); } catch {} };
+const writeSettings = (s) => writeJsonAtomic(SETTINGS_FILE(), s);
 // Applique les creds saisis dans l'UI aux variables d'env que lisent les moteurs
 // (MC device code / Epic). Ne touche qu'aux champs renseignés → un vrai .env reste prioritaire si l'UI est vide.
+// Vider un champ RETIRE la variable : sinon, après avoir effacé un identifiant dans
+// les Réglages, le moteur continuait d'utiliser l'ancienne valeur jusqu'au
+// redémarrage — on croyait avoir révoqué une app Azure encore active.
 function applySettings(s) {
-  if (s && s.msClientId) process.env.MS_CLIENT_ID = s.msClientId;
-  if (s && s.epicClientId) process.env.EPIC_CLIENT_ID = s.epicClientId;
-  if (s && s.epicClientSecret) process.env.EPIC_CLIENT_SECRET = s.epicClientSecret;
+  const map = {
+    MS_CLIENT_ID: s && s.msClientId,
+    EPIC_CLIENT_ID: s && s.epicClientId,
+    EPIC_CLIENT_SECRET: s && s.epicClientSecret,
+  };
+  for (const [k, v] of Object.entries(map)) {
+    if (v) process.env[k] = v; else delete process.env[k];
+  }
 }
 
 // ---------- Historique des snipes (userData/history.json, 100 derniers) ----------
 const HISTORY_FILE = () => path.join(app.getPath('userData'), 'history.json');
 const readHistory = () => { try { return JSON.parse(fs.readFileSync(HISTORY_FILE(), 'utf8')); } catch { return []; } };
 function pushHistory(entry) {
-  try {
-    const h = readHistory(); h.unshift(entry);
-    fs.mkdirSync(path.dirname(HISTORY_FILE()), { recursive: true });
-    fs.writeFileSync(HISTORY_FILE(), JSON.stringify(h.slice(0, 100), null, 2));
-  } catch {}
+  const h = readHistory(); h.unshift(entry);
+  writeJsonAtomic(HISTORY_FILE(), h.slice(0, 100));
 }
 
 const stripAnsi = (s) => String(s).replace(/\[[0-9;]*m/g, '');
@@ -131,7 +156,12 @@ ipcMain.handle('platforms:list', () => listPlatforms());
 ipcMain.handle('settings:get', () => ({ ok: true, settings: readSettings() }));
 ipcMain.handle('settings:save', (_e, s) => {
   const clean = { msClientId: s?.msClientId || '', epicClientId: s?.epicClientId || '', epicClientSecret: s?.epicClientSecret || '', proxies: s?.proxies || '' };
-  writeSettings(clean); applySettings(clean); return { ok: true };
+  const saved = writeSettings(clean);
+  // On applique quand même en mémoire : la session courante fonctionne, mais l'UI
+  // doit savoir que le réglage ne survivra PAS au redémarrage (elle affichait
+  // « ✅ Enregistré. » quoi qu'il arrive).
+  applySettings(clean);
+  return saved ? { ok: true } : { ok: false, error: 'Réglages appliqués pour cette session, mais NON enregistrés sur le disque.' };
 });
 ipcMain.handle('history:get', () => ({ ok: true, items: readHistory() }));
 // Normalise la réponse pour le renderer : { ok, updateAvailable, current, version } | { ok:false, error }.
@@ -285,50 +315,85 @@ ipcMain.handle('pf:bulk', (_e, pid, payload) => withAdapter(pid, async (a) => {
 
 // ---------- IPC : watchlist unifiée ----------
 ipcMain.handle('watch:get', () => ({ ok: true, items: readWatch() }));
+// Ces handlers remontent désormais l'échec d'écriture : ils répondaient « ok » même
+// quand rien n'était persisté (writeWatch avalait l'erreur), donc l'UI affichait une
+// watchlist qui disparaissait au redémarrage sans que rien ne l'ait signalé.
+const PERSIST_KO = 'Impossible d\'écrire sur le disque (droits ou espace insuffisants).';
 ipcMain.handle('watch:add', (_e, item) => {
-  const arr = readWatch();
   if (!item || !item.platform || !item.name) return { ok: false, error: 'Entrée invalide.' };
+  const arr = readWatch();
   if (arr.some((x) => x.platform === item.platform && x.name.toLowerCase() === item.name.toLowerCase())) return { ok: true, items: arr };
   arr.unshift({ platform: item.platform, name: item.name, guildId: item.guildId || null, addedAt: Date.now() });
-  writeWatch(arr.slice(0, 200)); return { ok: true, items: readWatch() };
+  const next = arr.slice(0, 200);
+  // On renvoie la liste qu'on VIENT d'écrire au lieu de relire le fichier : une
+  // relecture de plus pour un résultat identique, et surtout elle masquait l'échec.
+  if (!writeWatch(next)) return { ok: false, error: PERSIST_KO, items: readWatch() };
+  return { ok: true, items: next };
 });
 ipcMain.handle('watch:remove', (_e, platform, name) => {
   const arr = readWatch().filter((x) => !(x.platform === platform && x.name === name));
-  writeWatch(arr); return { ok: true, items: arr };
+  if (!writeWatch(arr)) return { ok: false, error: PERSIST_KO, items: readWatch() };
+  return { ok: true, items: arr };
 });
-ipcMain.handle('watch:clear', () => { writeWatch([]); return { ok: true, items: [] }; });
+ipcMain.handle('watch:clear', () => {
+  if (!writeWatch([])) return { ok: false, error: PERSIST_KO, items: readWatch() };
+  return { ok: true, items: [] };
+});
 
 // ---------- Surveillance de la watchlist (poll périodique + notifications bureau) ----------
 let watchTimer = null;
 let watchBusy = false;
 const notifiedFree = new Set(); // n'alerte qu'UNE fois par libération (pas à chaque passage)
 
+// Sonde UNE entrée. Isolée pour que la boucle reste lisible et que l'espacement
+// anti rate-limit soit garanti par l'appelant.
+async function probeWatchEntry(it) {
+  const key = it.platform + ':' + String(it.name).toLowerCase();
+  let a;
+  try { a = await getAdapter(it.platform); } catch { return; }
+  if (!a || !a.check) return;
+  let r;
+  try { r = await a.check(it.name); } catch { return; } // pas connecté / erreur → on saute
+  if (r && r.free) {
+    if (!notifiedFree.has(key)) {
+      notifiedFree.add(key);
+      notify('🔔 Nom libre !', `« ${it.name} » est libre sur ${it.platform}.`);
+      try { win?.webContents.send('watch-free', { platform: it.platform, name: it.name }); } catch {}
+    }
+  } else if (r) { notifiedFree.delete(key); } // repris → re-notifiable s'il se relibère
+}
+
 async function sweepWatchlist() {
   if (watchBusy) return;
   watchBusy = true;
   try {
-    for (const it of readWatch()) {
-      // try/finally : chaque `continue` sautait l'espacement de 500 ms placé en fin de
-      // boucle. Une liste dont les sondes échouent (non connecté, rate-limit — que
-      // check() signale désormais en levant) était donc parcourue à pleine vitesse,
-      // ce qui aggrave précisément le rate-limit qu'on veut éviter. Le `finally`
-      // garantit l'espacement quel que soit le chemin de sortie de l'itération.
-      try {
-        const key = it.platform + ':' + String(it.name).toLowerCase();
-        let a; try { a = await getAdapter(it.platform); } catch { continue; }
-        if (!a || !a.check) continue;
-        let r; try { r = await a.check(it.name); } catch { continue; } // pas connecté / erreur → on saute
-        if (r && r.free) {
-          if (!notifiedFree.has(key)) {
-            notifiedFree.add(key);
-            notify('🔔 Nom libre !', `« ${it.name} » est libre sur ${it.platform}.`);
-            try { win?.webContents.send('watch-free', { platform: it.platform, name: it.name }); } catch {}
-          }
-        } else if (r) { notifiedFree.delete(key); } // repris → re-notifiable s'il se relibère
-      } finally {
-        await sleep(500); // espacement anti rate-limit entre les sondes (toujours appliqué)
-      }
+    const items = readWatch();
+
+    // Purge des clés dont l'entrée a été retirée de la watchlist : sans ça, notifiedFree
+    // grossissait indéfiniment au fil des ajouts/suppressions (fuite mémoire lente).
+    const liveKeys = new Set(items.map((it) => it.platform + ':' + String(it.name).toLowerCase()));
+    for (const k of notifiedFree) if (!liveKeys.has(k)) notifiedFree.delete(k);
+
+    // Le rate-limit est imposé PAR API, pas globalement : sonder Mojang n'a aucune
+    // incidence sur Epic. On balayait pourtant tout en série avec 500 ms entre CHAQUE
+    // entrée — 50 noms = plus de 25 s, pendant lesquelles une libération sur la
+    // dernière plateforme passait inaperçue. On groupe donc par plateforme, on lance
+    // les groupes EN PARALLÈLE, et on conserve l'espacement de 500 ms À L'INTÉRIEUR
+    // de chaque groupe (c'est lui qui protège réellement du rate-limit).
+    const byPlatform = new Map();
+    for (const it of items) {
+      if (!byPlatform.has(it.platform)) byPlatform.set(it.platform, []);
+      byPlatform.get(it.platform).push(it);
     }
+
+    await Promise.all([...byPlatform.values()].map(async (group) => {
+      for (const it of group) {
+        // try/finally : un `return` de probeWatchEntry ne doit jamais sauter
+        // l'espacement, sinon une liste dont les sondes échouent serait parcourue à
+        // pleine vitesse — ce qui aggrave précisément le rate-limit qu'on veut éviter.
+        try { await probeWatchEntry(it); } finally { await sleep(500); }
+      }
+    }));
   } finally { watchBusy = false; }
 }
 

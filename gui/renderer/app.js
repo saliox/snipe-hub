@@ -449,7 +449,11 @@ $('watchAddBtn').onclick = async () => {
   const name = $('snipeName').value.trim() || $('checkName').value.trim();
   if (!name) return flagField('snipeName', 'Entre un nom.');
   const r = await H.watchAdd({ platform: current, name, guildId: $('guildId').value.trim() || null });
-  renderWatch(r.items); logLine(`➕ « ${name} » ajouté à la watchlist (${current}).`);
+  renderWatch(r.items);
+  // Le main répond désormais ok:false si l'écriture disque a échoué : ne plus annoncer
+  // un ajout qui disparaîtra au redémarrage.
+  if (r && r.ok === false) notify('❌ ' + (r.error || 'Ajout non enregistré.'), 'err', 6000);
+  else logLine(`➕ « ${name} » ajouté à la watchlist (${current}).`);
 };
 $('watchClear').onclick = async () => { freeWatch.clear(); const r = await H.watchClear(); renderWatch(r.items); };
 
@@ -547,9 +551,16 @@ $('settingsClose').onclick = () => $('settingsModal').classList.add('hidden');
 $('settingsModal').onclick = (e) => { if (e.target === $('settingsModal')) $('settingsModal').classList.add('hidden'); };
 $('settingsSave').onclick = async () => {
   const s = { msClientId: $('setMs').value.trim(), epicClientId: $('setEpicId').value.trim(), epicClientSecret: $('setEpicSecret').value.trim(), proxies: $('setProxies').value };
-  await H.settingsSave(s);
-  $('settingsMsg').textContent = '✅ Enregistré.';
+  const r = await H.settingsSave(s);
   if (s.proxies) $('bulkProxies').value = s.proxies;
+  // « ✅ Enregistré. » s'affichait quoi qu'il arrive, y compris quand l'écriture
+  // disque échouait : les identifiants repartaient à zéro au redémarrage suivant.
+  if (r && r.ok === false) {
+    $('settingsMsg').textContent = '⚠️ ' + (r.error || 'Non enregistré.');
+    notify(r.error || 'Réglages non enregistrés.', 'err', 7000);
+    return;   // on laisse la modale ouverte : l'utilisateur doit voir le problème
+  }
+  $('settingsMsg').textContent = '✅ Enregistré.';
   setTimeout(() => $('settingsModal').classList.add('hidden'), 700);
 };
 
