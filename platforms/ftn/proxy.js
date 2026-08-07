@@ -15,8 +15,13 @@ export function makeProxyDispatchers(lines) {
     try {
       out.push(new ProxyAgent({
         uri,
-        // Proxies gratuits : certificats souvent bancals, on tolère côté proxy.
-        requestTls: { rejectUnauthorized: false },
+        // ⚠️ NE JAMAIS remettre `requestTls: { rejectUnauthorized: false }` ici.
+        // Dans undici, `requestTls` s'applique au TLS vers l'ORIGINE (Epic) À TRAVERS le
+        // tunnel — pas au lien vers le proxy. Le désactiver laissait n'importe quel proxy
+        // de la liste présenter son propre certificat pour epicgames.com et lire le trafic
+        // en clair : or ces dispatchers portent l'access token Epic (bulk.js, sniper.js).
+        // La tolérance visait le lien VERS le proxy : c'est `proxyTls` (laissé strict ici,
+        // aligné sur platforms/mc/proxy.js qui ne désactive rien).
         connectTimeout: 8000,
       }));
     } catch { /* proxy invalide : ignoré */ }
