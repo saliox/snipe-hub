@@ -51,12 +51,12 @@ export function ntpQuery(server = 'time.google.com', port = 123, timeout = 3000)
 
 // Interroge plusieurs serveurs et garde la mesure au plus faible RTT (la plus fiable).
 export async function bestOffset(servers = ['time.google.com', 'time.cloudflare.com', 'pool.ntp.org']) {
-  const results = [];
-  for (const s of servers) {
-    try {
-      results.push(await ntpQuery(s));
-    } catch { /* on ignore le serveur injoignable */ }
-  }
+  // Les serveurs sont interrogés EN PARALLÈLE. En série, on payait la SOMME des
+  // latences — et surtout la somme des TIMEOUTS quand un serveur ne répond pas —
+  // alors que bestOffset est sur le chemin critique de CHAQUE snipe. Le critère de
+  // choix est inchangé : le RTT le plus faible gagne.
+  const settled = await Promise.allSettled(servers.map((s) => ntpQuery(s)));
+  const results = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
   if (!results.length) throw new Error('Aucun serveur NTP joignable');
   results.sort((a, b) => a.rtt - b.rtt);
   return results[0];

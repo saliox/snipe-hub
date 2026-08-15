@@ -1,6 +1,6 @@
 // Snipe Hub — processus principal Electron. Fenêtre unique + IPC unifié au-dessus des adaptateurs
 // (platforms/* via adapters/*), watchlist commune persistée, capture des logs de snipe, auto-update GitHub.
-import { app, BrowserWindow, ipcMain, shell, clipboard, Notification, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, clipboard, Notification, screen, safeStorage } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -112,9 +112,52 @@ function notify(title, body) {
 }
 
 // ---------- Réglages (creds + proxies) persistés (userData/settings.json) ----------
+// EPIC_CLIENT_SECRET était le SEUL secret du projet stocké en clair : tout le reste
+// (tokens, cookies) passe par securebox. On le chiffre via safeStorage d'Electron,
+// qui délègue au coffre de l'OS (DPAPI sous Windows) — pas de crypto maison ici.
+// Le champ chiffré est stocké sous `epicClientSecretEnc` ; l'ancien champ en clair
+// est migré puis effacé au premier enregistrement.
 const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'settings.json');
-const readSettings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8')); } catch { return {}; } };
-const writeSettings = (s) => writeJsonAtomic(SETTINGS_FILE(), s);
+
+function secretAvailable() {
+  try { return safeStorage.isEncryptionAvailable(); } catch { return false; }
+}
+function sealSecret(plain) {
+  if (!plain) return null;
+  try { return safeStorage.encryptString(String(plain)).toString('base64'); } catch { return null; }
+}
+function openSecret(b64) {
+  if (!b64) return '';
+  try { return safeStorage.decryptString(Buffer.from(String(b64), 'base64')); } catch { return ''; }
+}
+
+// Forme INTERNE (disque) -> forme applicative (secret en clair, jamais persistée telle quelle).
+function readSettings() {
+  let raw = {};
+  try { raw = JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8')); } catch { return {}; }
+  const out = { ...raw };
+  if (raw.epicClientSecretEnc) out.epicClientSecret = openSecret(raw.epicClientSecretEnc);
+  delete out.epicClientSecretEnc;
+  return out;
+}
+
+function writeSettings(s) {
+  const onDisk = {
+    msClientId: s.msClientId || '',
+    epicClientId: s.epicClientId || '',
+    proxies: s.proxies || '',
+  };
+  const sealed = secretAvailable() ? sealSecret(s.epicClientSecret) : null;
+  if (sealed) onDisk.epicClientSecretEnc = sealed;
+  // Repli : si le coffre de l'OS est indisponible (session sans keyring), on
+  // conserve le comportement historique plutôt que de perdre le réglage — mais
+  // on le DIT dans le journal au lieu de le faire en silence.
+  else if (s.epicClientSecret) {
+    onDisk.epicClientSecret = s.epicClientSecret;
+    console.warn('[settings] coffre système indisponible : EPIC_CLIENT_SECRET est stocké EN CLAIR.');
+  }
+  return writeJsonAtomic(SETTINGS_FILE(), onDisk);
+}
 // Applique les creds saisis dans l'UI aux variables d'env que lisent les moteurs
 // (MC device code / Epic). Ne touche qu'aux champs renseignés → un vrai .env reste prioritaire si l'UI est vide.
 // Vider un champ RETIRE la variable : sinon, après avoir effacé un identifiant dans
