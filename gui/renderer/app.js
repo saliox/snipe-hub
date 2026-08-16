@@ -622,6 +622,7 @@ document.addEventListener('keydown', (e) => {
 
 // ---------- Quoi de neuf (au 1er lancement d'une nouvelle version) ----------
 const CHANGELOG = {
+  '0.6.0': 'Fiabilité : coffres chiffrés durcis (plus de perte d\'identifiants), refresh Epic dédupliqué, écritures atomiques, secret Epic chiffré. Perfs : lecture de coffre ×367, balayage de watchlist ×5,5, NTP ×2-3. Et le check en masse récupère les noms rate-limités au lieu de les abandonner. 129 tests automatisés.',
   '0.5.0': 'Refonte visuelle : hiérarchie, focus clavier, journal coloré, options avancées repliées, toasts non bloquants — et animations gelées hors focus (0 GPU volé à ton jeu).',
   '0.4.0': 'Panneau Réglages (creds MC/Epic + proxies dans l\'UI), pastilles de connexion, historique des snipes, Entrée pour lancer.',
   '0.3.0': 'Notifications bureau + surveillance de la watchlist en arrière-plan (radar multi-plateforme).',
