@@ -57,7 +57,12 @@ export async function applyUpdate() {
   if (!lastInfo) return { ok: false, error: 'Aucune mise à jour prête' };
   busy = true;
   try {
-    if (await tryAppOnlyUpdate()) return { ok: true };
+    // Deux phases distinctes : « pas applicable » (plan null -> repli silencieux) est
+    // désormais séparé de « échouée en cours d'installation » (runAppOnlyUpdate lève,
+    // l'erreur remonte au catch ci-dessous et on N'ENCHAÎNE PAS sur l'installeur
+    // complet alors qu'un Expand-Archive réécrit peut-être déjà resourcesPath).
+    const plan = await planAppOnlyUpdate();
+    if (plan) { await runAppOnlyUpdate(plan); return { ok: true }; }
 
     // Repli : installeur complet.
     const dest = path.join(os.tmpdir(), sanitize(lastInfo.file));
@@ -81,32 +86,42 @@ export async function applyUpdate() {
 // MAJ différentielle : ne remplace que resources/app (code), ~1 Mo au lieu de 81 Mo.
 // Conditions : assets app.zip + app-update.json présents et MÊME version majeure
 // d'Electron (pas de changement de runtime). Renvoie true si appliquée.
-async function tryAppOnlyUpdate() {
+// PHASE 1 — décider SI la MAJ différentielle est applicable. Tout échec ici est
+// bénin : on retombe simplement sur l'installeur complet. Renvoie le plan, ou null.
+async function planAppOnlyUpdate() {
   try {
     const assets = lastInfo.assets || [];
     const metaAsset = assets.find((a) => a.name === 'app-update.json');
     const zipAsset = assets.find((a) => a.name === 'app.zip');
-    if (!metaAsset || !zipAsset) return false;
+    if (!metaAsset || !zipAsset) return null;
 
     const meta = await fetchJson(metaAsset.url);
     const curMajor = String(process.versions.electron || '').split('.')[0];
     const newMajor = String(meta.electron || '').split('.')[0];
     if (!curMajor || curMajor !== newMajor) {
       console.log(`[update] runtime Electron différent (${curMajor}->${newMajor}) : installeur complet`);
-      return false;
+      return null;
     }
-
-    const dest = path.join(os.tmpdir(), 'snipemc-app.zip');
-    send('update-status', { state: 'downloading' });
-    // Préfère le digest calculé par GitHub (serveur) ; repli sur app-update.json.
-    await downloadTo({ url: zipAsset.url, size: meta.size, sha256: zipAsset.sha256 || meta.sha256 }, dest, (p) => send('update-progress', p));
-    send('update-status', { state: 'installing' });
-    applyAppZip(dest, meta.version || lastInfo.version);
-    return true;
+    return { meta, zipAsset };
   } catch (e) {
-    console.log('[update] MAJ différentielle impossible, repli installeur :', e.message);
-    return false;
+    console.log('[update] MAJ différentielle non applicable, repli installeur :', e.message);
+    return null;
   }
+}
+
+// PHASE 2 — EXÉCUTER le plan. Volontairement SANS catch : à partir du moment où
+// applyAppZip a lancé son script PowerShell, un Expand-Archive est peut-être déjà en
+// train de réécrire resourcesPath. L'ancien code enveloppait les deux phases dans un
+// SEUL try : une erreur survenue ICI renvoyait false, et applyUpdate enchaînait sur
+// l'installeur complet — pendant que la MAJ différentielle écrivait dans le même
+// dossier. On laisse donc l'erreur remonter à applyUpdate, qui l'affiche et s'arrête.
+async function runAppOnlyUpdate({ meta, zipAsset }) {
+  const dest = path.join(os.tmpdir(), 'snipehub-app.zip');
+  send('update-status', { state: 'downloading' });
+  // Préfère le digest calculé par GitHub (serveur) ; repli sur app-update.json.
+  await downloadTo({ url: zipAsset.url, size: meta.size, sha256: zipAsset.sha256 || meta.sha256 }, dest, (p) => send('update-progress', p));
+  send('update-status', { state: 'installing' });
+  applyAppZip(dest, meta.version || lastInfo.version);
 }
 
 // Remplace resources/app par le contenu de app.zip (racine = dossier app/) via un

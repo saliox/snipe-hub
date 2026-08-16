@@ -328,7 +328,27 @@ export async function watchNames(opts) {
       const name = targets[ti++ % targets.length];
       metrics.polls++;
       const disp = dispatchers[di++ % dispatchers.length];
-      const st = await displayNameStatus(name, token, disp);
+      // Les trois gardes que monitorLoop possède déjà et que cette boucle n'avait pas.
+      // 1) la sonde doit survivre à une coupure réseau : sans try/catch, un ECONNRESET
+      //    ou un dépassement des 8 s de headersTimeout tuait toute la surveillance.
+      let st;
+      try { st = await displayNameStatus(name, token, disp); }
+      catch (e) { log.warn(`sonde ${name} : ${e.message} — nouvelle tentative dans 2 s.`); await sleep(2000); continue; }
+
+      // 2) jeton expiré : sans ce traitement, le 401 retombait dans la voie « pris » et
+      //    la boucle annonçait « toujours pris » à l'infini, aveugle, sans rien signaler.
+      if (st.statusCode === 401) {
+        log.err('Jeton Epic expiré — reconnecte le compte (surveillance interrompue).');
+        logSummary(metrics, offset, diag);
+        return { success: false, error: 'token-expired', attempts: [] };
+      }
+      // 3) tout autre statut indéterminé (403, 5xx…) : on le DIT au lieu de le confondre
+      //    avec « pris ».
+      if (st.free == null && !st.rateLimited) {
+        log.warn(`sonde ${name} indéterminée (statut ${st.statusCode}) — nouvelle tentative.`);
+        await sleep(Math.max(2000, perPoll));
+        continue;
+      }
 
       if (st.free === true) {
         bell();

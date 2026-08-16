@@ -376,6 +376,12 @@ async function main() {
 
       case 'watch': {
         const f = flags(argv.slice(1));
+        // `--lead` et `--at` expriment une avance / un instant de DROP PLANIFIÉ : en
+        // surveillance on tire à la seconde où le nom se libère, ils n'ont donc aucun
+        // sens ici. Ils étaient acceptés puis ignorés SANS un mot — on le dit.
+        for (const k of ['lead', 'at']) {
+          if (f[k]) log.warn(`--${k} est ignoré par « watch » (réservé au mode planifié : utilise « snipe --at »).`);
+        }
         const { accessToken, accountId, displayName } = await getValidToken();
 
         let names = f._;
