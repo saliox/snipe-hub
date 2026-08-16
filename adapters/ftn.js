@@ -56,7 +56,7 @@ export default {
     const { accessToken } = await accounts.getValidToken();
     return async (name, dispatcher) => {
       const st = await epic.displayNameStatus(name, accessToken, dispatcher);
-      return { free: st.free };
+      return { free: st.free, rateLimited: st.rateLimited, retryAfter: st.retryAfter };
     };
   },
 

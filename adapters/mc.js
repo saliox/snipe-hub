@@ -44,7 +44,9 @@ export default {
   async bulkChecker() {
     return async (name, dispatcher) => {
       const r = await mojang.isNameFree(name, dispatcher);
-      return { free: r.free };
+      // On relaie rateLimited/retryAfter : core/bulk.js peut alors REMETTRE le nom
+      // en file au lieu de le figer sur un « ⚪ ? » définitif.
+      return { free: r.free, rateLimited: r.rateLimited, retryAfter: r.retryAfter };
     };
   },
 

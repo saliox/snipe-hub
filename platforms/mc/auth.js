@@ -77,7 +77,14 @@ async function pollForToken(deviceCode, interval) {
         device_code: deviceCode,
       }),
     });
-    const data = await res.json();
+    // Un portail captif, un proxy d'entreprise ou un 502 renvoient du HTML : res.json()
+    // levait alors « Unexpected token '<' », qui masquait complètement le vrai statut
+    // HTTP. On lit le corps brut pour donner une cause exploitable.
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch {
+      throw new Error(`token: réponse non-JSON de Microsoft (HTTP ${res.status}) — ${raw.slice(0, 160)}`);
+    }
     if (res.ok) return data;
     if (data.error === 'authorization_pending') continue;
     if (data.error === 'slow_down') { interval += 5; continue; }

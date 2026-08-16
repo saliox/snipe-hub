@@ -185,6 +185,17 @@ async function selectPlatform(pid) {
   if (!r.ok) { logLine('❌ ' + r.error); current = null; info = null; syncGate(); return; }
   current = pid;
   info = r;
+  // Remise à zéro de ce qui appartenait à la plateforme PRÉCÉDENTE : sans ça, un nom
+  // trouvé libre sur Minecraft restait affiché — et surtout chargeable en un clic —
+  // après être passé sur Twitch, où il n'a aucune raison d'être libre.
+  lastFreeName = null;
+  $('checkResult').textContent = '—';
+  $('checkResult').className = 'result muted';
+  $('checkActions').classList.add('hidden');
+  $('bulkResults').replaceChildren();
+  $('bulkProgress').textContent = '';
+  $('bulkCopy').classList.add('hidden');
+  $('bulkBar').classList.add('hidden');
   try { localStorage.setItem('lastPlatform', pid); } catch {}
   $('pfEmoji').textContent = r.emoji;
   $('pfLabel').textContent = r.soon ? r.label + ' — bientôt' : r.label;

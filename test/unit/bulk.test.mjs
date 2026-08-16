@@ -98,6 +98,66 @@ describe('runBulk — cas de base', () => {
   });
 });
 
+describe('runBulk — reprise sur rate-limit (429)', () => {
+  test('un nom rate-limité puis OK est RESONDÉ (plus de « ? » définitif)', async () => {
+    let n = 0;
+    const r = await runBulk({
+      names: ['a'],
+      check: async () => (++n === 1 ? { free: null, rateLimited: true, retryAfter: 1 } : { free: true }),
+    });
+    assert.equal(n, 2, 'le nom doit être resondé après la pause');
+    assert.equal(r[0].free, true, 'le verdict final est le vrai, pas l\'indéterminé');
+  });
+
+  test('TERMINAISON garantie : rate-limité en permanence -> 3 essais puis verdict', async () => {
+    // Sans borne, un 429 systématique boucle à l'infini et le scan ne rend jamais la main.
+    const seen = new Map();
+    const r = await runBulk({
+      names: ['a', 'b'],
+      check: async (name) => { seen.set(name, (seen.get(name) || 0) + 1); return { free: null, rateLimited: true, retryAfter: 1 }; },
+    });
+    assert.equal(seen.get('a'), 3, 'exactement MAX_TRIES essais');
+    assert.equal(seen.get('b'), 3);
+    assert.equal(r.length, 2);
+    assert.equal(r[0].free, null, 'après épuisement des essais, l\'indéterminé est assumé');
+  });
+
+  test('retryAfter est borné (une valeur absurde ne gèle pas le scan)', async () => {
+    let n = 0;
+    const t0 = Date.now();
+    await runBulk({
+      names: ['a'],
+      // 99999 s serait plus d'un jour d'attente ; le plafond est de 30 s, et on
+      // vérifie surtout que l'attente réelle reste raisonnable dans ce test.
+      check: async () => (++n === 1 ? { free: null, rateLimited: true, retryAfter: 1 } : { free: false }),
+    });
+    assert.ok(Date.now() - t0 < 5000, 'la pause doit rester bornée');
+    assert.equal(n, 2);
+  });
+
+  test('une erreur normale n\'est PAS resondée (seul le 429 l\'est)', async () => {
+    let n = 0;
+    const r = await runBulk({
+      names: ['a'],
+      check: async () => { n++; throw new Error('panne'); },
+    });
+    assert.equal(n, 1, 'une panne réseau ne doit pas être retentée par ce mécanisme');
+    assert.equal(r[0].free, null);
+    assert.match(r[0].error, /panne/);
+  });
+
+  test('onProgress ne compte un nom qu\'UNE fois, même après reprise', async () => {
+    let n = 0;
+    const seen = [];
+    await runBulk({
+      names: ['a'],
+      check: async () => (++n === 1 ? { free: null, rateLimited: true, retryAfter: 1 } : { free: true }),
+      onProgress: (p) => seen.push(p.done),
+    });
+    assert.deepEqual(seen, [1], 'la reprise ne doit pas faire avancer le compteur deux fois');
+  });
+});
+
 describe('runBulk — anti-fuite d\'IP (garantie de sécurité)', () => {
   test('liste ne produisant AUCUN proxy exploitable -> LÈVE, aucune requête émise', async () => {
     // Seules les lignes vides et les commentaires sont écartés par normalize().

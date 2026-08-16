@@ -15,7 +15,13 @@ import { exchangeAuthCode, refreshTokens, cacheFromToken, authCodeUrl } from './
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function dataDir() { return process.env.SNIPE_DATA_DIR || path.join(__dirname, '..', 'data'); }
 function storeFile() { return path.join(dataDir(), 'accounts.enc'); }
-function legacyTokenFile() { return path.join(dataDir(), 'token.enc'); }
+// ⚠️ Dans le hub, SNIPE_DATA_DIR est PARTAGÉ avec le moteur Minecraft, qui écrit son
+// propre `token.enc` au même endroit. Cet ancien chemin (hérité du CLI snipe-ftn
+// autonome, qui avait son dossier à lui) désignait donc le coffre de MC. La migration
+// ne se déclenchait pas — les clés de dérivation diffèrent, le déchiffrement échoue —
+// mais la ligne 35 aurait SUPPRIMÉ le token Minecraft si elle avait abouti.
+// On vise désormais un nom propre à Epic, et la suppression ne peut plus toucher MC.
+function legacyTokenFile() { return path.join(dataDir(), 'ftn-token.enc'); }
 
 function loadStore() {
   const s = loadEncrypted(storeFile());

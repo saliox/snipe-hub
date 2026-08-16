@@ -29,7 +29,10 @@ export default {
   // Check en masse : validation de dispo (via proxy si fourni). Utilise le cookie si connecté.
   async bulkChecker() {
     const cookie = auth.loadCookie();
-    return async (name, dispatcher) => { const r = await validateName(name, cookie, dispatcher); return { free: r.free }; };
+    return async (name, dispatcher) => {
+      const r = await validateName(name, cookie, dispatcher);
+      return { free: r.free, rateLimited: r.rateLimited, retryAfter: r.retryAfter };
+    };
   },
 
   // opts unifiés : { name, password, dropAt, monitor, burst, leadMs, skipNtp }

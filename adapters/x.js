@@ -26,7 +26,10 @@ export default {
   },
   async bulkChecker() {
     const cred = auth.loadCreds();
-    return async (name, dispatcher) => { const r = await checkAvailable(name, cred, dispatcher); return { free: r.free }; };
+    return async (name, dispatcher) => {
+      const r = await checkAvailable(name, cred, dispatcher);
+      return { free: r.free, rateLimited: r.rateLimited, retryAfter: r.retryAfter };
+    };
   },
 
   // opts unifiés : { name, dropAt, monitor, leadMs, skipNtp }

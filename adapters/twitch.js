@@ -27,7 +27,15 @@ export default {
   // Dispo via Helix Get Users (nécessite le token) → check en masse proxifié.
   async bulkChecker() {
     const token = auth.loadToken();
-    return async (name, dispatcher) => { const r = await checkAvailable(name, token, dispatcher); return { free: r.free }; };
+    // Helix EXIGE un jeton : sans lui, checkAvailable renvoie { free: null } pour
+    // CHAQUE nom. Sur une liste de 1000 noms, l'utilisateur obtenait 1000 lignes
+    // « ⚪ ? » et « 0/N libres » sans qu'on lui dise jamais qu'il faut se connecter.
+    // On échoue tout de suite, avec la cause.
+    if (!token) throw new Error('Connecte-toi d\'abord à Twitch : l\'API Helix exige un jeton pour vérifier la disponibilité.');
+    return async (name, dispatcher) => {
+      const r = await checkAvailable(name, token, dispatcher);
+      return { free: r.free, rateLimited: r.rateLimited, retryAfter: r.retryAfter };
+    };
   },
 
   // opts unifiés : { name, dropAt, monitor, leadMs, skipNtp }
